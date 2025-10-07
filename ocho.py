@@ -35,9 +35,6 @@ def _get_decrypted_subscription_api_url():
         sys.exit(1)
 
 def _check_integrity():
-    # This function is a placeholder. In a real scenario, it would perform
-    # checks to ensure the script hasn't been tampered with.
-    # For now, it always returns True.
     return True
 
 def get_device_id():
@@ -121,8 +118,6 @@ def device_main():
     if status == "active":
         logger.info(f"Subscription Status: Active. Access granted! {message}")
         _GLOBAL_SUBSCRIPTION_ACTIVE = True
-        # Removed input() here as it would block the Flask app startup indefinitely
-        # The Flask app will proceed if this function returns True
         return True
     elif status in ["pending", "registered_pending"]:
         logger.warning(f"Subscription Status: Pending Approval. {message}")
@@ -135,7 +130,6 @@ def device_main():
         logger.info(f"Your Device ID: {device_id}")
     return False
 
-# --- Logging Configuration for ocho.py ---
 colorama.init(autoreset=True)
 
 class ColoredFormatter(logging.Formatter):
@@ -155,15 +149,13 @@ class ColoredFormatter(logging.Formatter):
             record.msg = f"{self.COLORS[levelname]}{record.msg}{self.RESET}"
         return super().format(record)
 
-logger = logging.getLogger(__name__) # Use __name__ to get a logger specific to ocho.py
+logger = logging.getLogger(__name__)
 handler = logging.StreamHandler()
 handler.setFormatter(ColoredFormatter())
 logger.addHandler(handler)
 logger.setLevel(logging.DEBUG)
 logging.getLogger("urllib3").setLevel(logging.ERROR)
 logging.getLogger("requests").setLevel(logging.ERROR)
-
-# --- Rest of ocho.py classes and functions (unchanged) ---
 
 class LiveStats:
     def __init__(self):
@@ -1208,8 +1200,6 @@ def get_fresh_cookie(session):
         return None
 
 def main():
-    # This main function is for when ocho.py is run directly.
-    # When imported by app.py, device_main() is called directly.
     if not device_main():
         logger.error("Access denied. Exiting.")
         sys.exit(1)
@@ -1271,7 +1261,5 @@ def main():
     final_stats = live_stats.get_stats()
     logger.info(f"\n[FINAL STATS] VALID: {final_stats['valid']} | INVALID: {final_stats['invalid']} | CLEAN: {final_stats['clean']} | NOT CLEAN: {final_stats['not_clean']} | CODM: {final_stats['codm']} | NO CODM: {final_stats['no_codm']}")
 
-# This block ensures that main() is only called if ocho.py is executed directly,
-# not when it's imported by app.py.
 if __name__ == "__main__":
     main()
