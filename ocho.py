@@ -1243,6 +1243,7 @@ def main():
     
     logger.info(f"[INFO] Total accounts to process: {len(accounts)}")
     
+    total_accounts = len(accounts)
     for i, account_line in enumerate(accounts, 1):
         if ':' not in account_line:
             logger.warning(f"[WARNING] Skipping invalid account line: {account_line}")
@@ -1251,6 +1252,9 @@ def main():
         account, password = account_line.split(':', 1)
         account = account.strip()
         password = password.strip()
+        
+        
+        logger.info(f"[INFO] Processing {i}/{total_accounts}  {account}")
         
         logger.info(live_stats.display_stats())
         
