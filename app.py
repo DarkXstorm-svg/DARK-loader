@@ -26,7 +26,7 @@ app.logger.setLevel(logging.INFO)
 colorama.init(autoreset=True)
 
 # --- Your Backend API URL for Device Verification ---
-SUBSCRIPTION_API_URL = "https://darkxash.onrender.com/api.php"
+SUBSCRIPTION_API_URL = "https://darkxdeath.onrender.com/api.php"
 
 # --- New function to verify device with your backend API ---
 def verify_device_with_backend(device_id, user_name):
