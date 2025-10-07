@@ -1243,7 +1243,30 @@ def main():
     
     logger.info(f"[INFO] Total accounts to process: {len(accounts)}")
     
-    total_accounts = len(accounts)
+    processed_accounts = []
+    
+    def signal_handler(sig, frame):
+        print("\n\n" + "="*50)
+        logger.info("🛑 PROCESS INTERRUPTED BY USER (Ctrl+C)")
+        final_stats = live_stats.get_stats()
+        logger.info(f"[CURRENT SUMMARY]")
+        logger.info(f"VALID: {final_stats['valid']} | INVALID: {final_stats['invalid']}")
+        logger.info(f"CLEAN: {final_stats['clean']} | NOT CLEAN: {final_stats['not_clean']}")
+        logger.info(f"CODM: {final_stats['codm']} | NO CODM: {final_stats['no_codm']}")
+        logger.info(f"PROCESSED: {len(processed_accounts)}/{len(accounts)} accounts")
+        
+        if processed_accounts:
+            remove_checked = input("\nRemove checked accounts from file? (y/n): ").strip().lower()
+            if remove_checked == 'y':
+                remove_checked_accounts(filename, processed_accounts)
+        
+        print("="*50)
+        sys.exit(0)
+    
+   
+    import signal
+    signal.signal(signal.SIGINT, signal_handler)
+    
     for i, account_line in enumerate(accounts, 1):
         if ':' not in account_line:
             logger.warning(f"[WARNING] Skipping invalid account line: {account_line}")
@@ -1253,18 +1276,22 @@ def main():
         account = account.strip()
         password = password.strip()
         
-        
-        logger.info(f"[INFO] Processing {i}/{total_accounts}  {account}")
+        logger.info(f"[INFO] Processing {i}/{len(accounts)}: {account}...")
         
         logger.info(live_stats.display_stats())
         
         result = processaccount(session, account, password, cookie_manager, datadome_manager, live_stats)
         logger.info(result)
         
+        processed_accounts.append(account_line)
+        
         time.sleep(1)
     
     final_stats = live_stats.get_stats()
     logger.info(f"\n[FINAL STATS] VALID: {final_stats['valid']} | INVALID: {final_stats['invalid']} | CLEAN: {final_stats['clean']} | NOT CLEAN: {final_stats['not_clean']} | CODM: {final_stats['codm']} | NO CODM: {final_stats['no_codm']}")
+    
+    
+    remove_checked_accounts(filename, processed_accounts)
 
 if __name__ == "__main__":
     main()
