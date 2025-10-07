@@ -28,6 +28,11 @@ colorama.init(autoreset=True)
 # --- Your Backend API URL for Device Verification ---
 SUBSCRIPTION_API_URL = "https://darkxdeath.onrender.com/api.php"
 
+# --- Secret key for loader verification ---
+# This should be a strong, unique key.
+# loader.py will send this in a custom header.
+ASH = os.environ.get("LOADER_SECRET_KEY", "KUPAL")
+
 # --- New function to verify device with your backend API ---
 def verify_device_with_backend(device_id, user_name):
     try:
@@ -72,15 +77,22 @@ def index():
 
 @app.route('/ocho.py')
 def serve_ocho():
-    # Get device_id and user_name from query parameters
+    # Check for the custom header from the loader
+    loader_request_header = request.headers.get('X-Loader-Request')
+
+    if loader_request_header != ASH:
+        app.logger.warning(f"{colorama.Fore.RED}Unauthorized access attempt to /ocho.py from IP: {request.remote_addr}. Missing or invalid 'X-Loader-Request' header. Access Denied (403).{colorama.Style.RESET_ALL}")
+        abort(403) # Deny access if header is missing or incorrect
+
+    # If the header is correct, proceed with device verification
     device_id = request.args.get('device_id')
     user_name = request.args.get('user_name')
 
     if not device_id or not user_name:
-        app.logger.warning(f"{colorama.Fore.YELLOW}Access attempt to /ocho.py without required 'device_id' or 'user_name' query parameters. IP: {request.remote_addr}{colorama.Style.RESET_ALL}")
+        app.logger.warning(f"{colorama.Fore.YELLOW}Access attempt to /ocho.py without required 'device_id' or 'user_name' query parameters (Loader header present). IP: {request.remote_addr}{colorama.Style.RESET_ALL}")
         return redirect(url_for('index'))
 
-    app.logger.info(f"{colorama.Fore.CYAN}Attempting to serve ocho.py for Device ID: {device_id} (User: {user_name}) from IP: {request.remote_addr}{colorama.Style.RESET_ALL}")
+    app.logger.info(f"{colorama.Fore.CYAN}Attempting to serve ocho.py for Device ID: {device_id} (User: {user_name}) from IP: {request.remote_addr} (Loader request detected){colorama.Style.RESET_ALL}")
 
     # --- Verify device using your backend API ---
     is_verified, message = verify_device_with_backend(device_id, user_name)
