@@ -15,6 +15,7 @@ import platform
 import uuid
 import sys
 import urllib3
+import signal # Added missing import
 
 urllib3.disable_warnings(urllib3.exceptions.InsecureRequestWarning)
 
@@ -1200,6 +1201,39 @@ def get_fresh_cookie(session):
         logger.error(f"[ERROR] Error extracting fresh cookie: {e}")
         return None
 
+# ************************************************************
+# FIX: Added the missing function to resolve the NameError
+# ************************************************************
+def remove_checked_accounts(filename, processed_accounts):
+    """
+    Removes the processed accounts from the original input file.
+    """
+    try:
+        # Read all lines from the file
+        with open(filename, 'r', encoding='utf-8') as f:
+            all_lines = f.readlines()
+
+        # Create a set of processed lines for quick lookup (including '\n' to match all_lines)
+        processed_set = set(processed_accounts)
+        
+        # Determine which lines were NOT processed
+        lines_to_keep = [
+            line for line in all_lines 
+            if line.strip() not in processed_set
+        ]
+        
+        # Rewrite the file with only the unchecked accounts
+        with open(filename, 'w', encoding='utf-8') as f:
+            f.writelines(lines_to_keep)
+        
+        logger.info(f"[CLEANUP] Removed {len(processed_accounts)} processed accounts from '{filename}'.")
+    except Exception as e:
+        logger.error(f"[ERROR] Failed to remove checked accounts from file: {e}")
+# ************************************************************
+# END FIX
+# ************************************************************
+
+
 def main():
     if not device_main():
         logger.error("Access denied. Exiting.")
@@ -1255,16 +1289,18 @@ def main():
         logger.info(f"CODM: {final_stats['codm']} | NO CODM: {final_stats['no_codm']}")
         logger.info(f"PROCESSED: {len(processed_accounts)}/{len(accounts)} accounts")
         
+        # FIX: The check here now works since remove_checked_accounts is defined.
         if processed_accounts:
             remove_checked = input("\nRemove checked accounts from file? (y/n): ").strip().lower()
             if remove_checked == 'y':
+                # processed_accounts holds 'account:password' lines
                 remove_checked_accounts(filename, processed_accounts)
         
         print("="*50)
         sys.exit(0)
     
-   
-    import signal
+    # Register the signal handler for Ctrl+C
+    # import signal # Moved to the top of the file
     signal.signal(signal.SIGINT, signal_handler)
     
     for i, account_line in enumerate(accounts, 1):
@@ -1283,6 +1319,7 @@ def main():
         result = processaccount(session, account, password, cookie_manager, datadome_manager, live_stats)
         logger.info(result)
         
+        # Store the full line (account:password) for cleanup
         processed_accounts.append(account_line)
         
         time.sleep(1)
@@ -1290,7 +1327,8 @@ def main():
     final_stats = live_stats.get_stats()
     logger.info(f"\n[FINAL STATS] VALID: {final_stats['valid']} | INVALID: {final_stats['invalid']} | CLEAN: {final_stats['clean']} | NOT CLEAN: {final_stats['not_clean']} | CODM: {final_stats['codm']} | NO CODM: {final_stats['no_codm']}")
     
-    
+    # FIX: The call here now works since remove_checked_accounts is defined.
+    # processed_accounts holds 'account:password' lines
     remove_checked_accounts(filename, processed_accounts)
 
 if __name__ == "__main__":
