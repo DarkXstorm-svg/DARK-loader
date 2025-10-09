@@ -72,7 +72,17 @@ def verify_device_with_backend(device_id, user_name):
 @app.route('/')
 def index():
     return '''
-    <h1>OCHOxDARK Server</h1>
+    <html>
+        <head>
+            <title>OCHOxDARK Server</title>
+        </head>
+        <body style="text-align: center; background-color: #000;">
+            <h1 style="color: white;">OCHOxDARK Server</h1>
+            <img src="https://i.ibb.co/F4NmSVfw/IMG-20250907-230002-857.jpg" 
+                 alt="OCHOxDARK Image" 
+                 style="max-width: 90%; height: auto; border-radius: 10px; margin-top: 20px;">
+        </body>
+    </html>
     '''
 
 @app.route('/ocho.py')
