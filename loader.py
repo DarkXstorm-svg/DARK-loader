@@ -71,48 +71,59 @@ class SecurityEngine:
         """Monitor for security threats"""
         while self.is_monitoring:
             try:
-                # Anti-debugging checks
+                # Anti-debugging checks (less frequent)
                 if self._detect_debugger():
                     print_status("Security threat detected - terminating", "error")
                     sys.exit(1)
                 
-                # Anti-analysis checks
+                # Anti-analysis checks (less frequent)
                 if self._detect_analysis_tools():
                     print_status("Analysis tool detected - terminating", "error")
                     sys.exit(1)
                 
-                # Runtime integrity
+                # Runtime integrity (more lenient)
                 if not self._verify_runtime_integrity():
                     print_status("Runtime integrity compromised - terminating", "error")
                     sys.exit(1)
                 
-                time.sleep(2)
+                # Longer sleep for normal operation
+                time.sleep(10)
             except:
-                pass
+                # Don't crash on monitoring errors
+                time.sleep(10)
     
     def _detect_debugger(self) -> bool:
-        """Detect debuggers and analysis tools"""
+        """Detect active debuggers"""
         try:
-            # Check for debugger attachment
+            # Only check for active debugger attachment
             if hasattr(sys, 'gettrace') and sys.gettrace() is not None:
                 return True
             
-            # Check for common debugger processes
-            debugger_names = ['gdb', 'lldb', 'windbg', 'x64dbg', 'ida', 'ollydbg']
-            for proc in psutil.process_iter(['name']):
-                if proc.info['name'] and any(dbg in proc.info['name'].lower() for dbg in debugger_names):
-                    return True
+            # More specific debugger detection (exact matches only)
+            dangerous_processes = ['gdb', 'windbg', 'x64dbg', 'ollydbg']
+            try:
+                for proc in psutil.process_iter(['name']):
+                    proc_name = proc.info.get('name', '').lower()
+                    if proc_name in dangerous_processes:
+                        return True
+            except (psutil.NoSuchProcess, psutil.AccessDenied):
+                pass
         except:
             pass
         return False
     
     def _detect_analysis_tools(self) -> bool:
-        """Detect reverse engineering tools"""
+        """Detect active reverse engineering tools"""
         try:
-            analysis_tools = ['wireshark', 'fiddler', 'burpsuite', 'cheatengine', 'processhacker']
-            for proc in psutil.process_iter(['name']):
-                if proc.info['name'] and any(tool in proc.info['name'].lower() for tool in analysis_tools):
-                    return True
+            # Only detect actively dangerous tools
+            dangerous_tools = ['cheatengine', 'ida64', 'ida']
+            try:
+                for proc in psutil.process_iter(['name']):
+                    proc_name = proc.info.get('name', '').lower()
+                    if proc_name in dangerous_tools:
+                        return True
+            except (psutil.NoSuchProcess, psutil.AccessDenied):
+                pass
         except:
             pass
         return False
@@ -121,17 +132,19 @@ class SecurityEngine:
         """Verify runtime integrity"""
         try:
             # Check execution time (prevent time-based analysis)
-            if time.time() - self.start_time > 300:  # 5 minutes max
+            # Increased timeout for normal usage - 30 minutes max
+            if time.time() - self.start_time > 1800:
                 return False
             
-            # Check for suspicious modules
-            prohibited = ['pdb', 'trace', 'bdb', 'dis', 'inspect']
-            if any(mod in sys.modules for mod in prohibited):
+            # Check for suspicious modules (only during active analysis)
+            prohibited = ['pdb', 'trace', 'bdb', 'dis']
+            active_prohibited = [mod for mod in prohibited if mod in sys.modules and hasattr(sys.modules[mod], '__file__')]
+            if active_prohibited:
                 return False
                 
             return True
         except:
-            return False
+            return True  # Don't fail on exceptions during normal operation
     
     def generate_loader_signature(self, device_id: str, user_name: str, timestamp: int) -> str:
         """Generate secure loader signature"""
