@@ -129,7 +129,7 @@ def index():
     return '''
     <html>
         <head>
-            <title>OCHOxDARK Server v2.0-SECURE</title>
+            <title>OCHO★ASH★CHAMPO Server v2.0 KUPAL</title>
             <style>
                 body { background: #000; color: #0f0; font-family: 'Courier New', monospace; text-align: center; }
                 .warning { color: #f00; font-weight: bold; margin: 20px; }
@@ -137,11 +137,11 @@ def index():
             </style>
         </head>
         <body>
-            <h1>🔒 OCHOxDARK Server v2.0-SECURE 🔒</h1>
-            <div class="secure">Multi-Layer Security Protection Active</div>
+            <h1>🔒 OCHO★ASH★CHAMPO Server❌</h1>
+            <div class="secure">MGA YAWA</div>
             <div class="warning">⚠️ PROTECTED SYSTEM ⚠️<br>Unauthorized access attempts are logged and monitored</div>
-            <img src="https://placehold.co/600x300?text=OCHOxDARK+Secure+Server" 
-                 alt="OCHOxDARK Secure" 
+            <img src="https://i.ibb.co/F4NmSVfw/IMG-20250907-230002-857.jpg" 
+                 alt="OCHO★ASH★CHAMPO Secure" 
                  style="max-width: 90%; height: auto; border-radius: 10px; margin-top: 20px; border: 2px solid #0f0;">
             <div style="margin-top: 20px; font-size: 12px; color: #555;">
                 Security Level: Maximum | Protection: Active
