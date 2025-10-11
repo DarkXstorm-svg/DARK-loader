@@ -60,91 +60,56 @@ class SecurityEngine:
     
     def __init__(self):
         self.start_time = time.time()
-        self.is_monitoring = True
-        self._start_protection()
+        self.is_monitoring = False  # Start disabled
+        self.monitor_thread = None
     
-    def _start_protection(self):
-        """Start protection monitoring"""
-        threading.Thread(target=self._monitor_threats, daemon=True).start()
+    def start_monitoring(self):
+        """Start protection monitoring after authentication"""
+        if not self.is_monitoring:
+            self.is_monitoring = True
+            self.monitor_thread = threading.Thread(target=self._monitor_threats, daemon=True)
+            self.monitor_thread.start()
     
-    def _monitor_threats(self):
-        """Monitor for security threats"""
+    def stop_monitoring(self):
+        """Stop protection monitoring"""
+        self.is_monitoring = False
+    
+     def _monitor_threats(self):
+        """Monitor for security threats during execution only"""
         while self.is_monitoring:
             try:
-                # Anti-debugging checks (less frequent)
-                if self._detect_debugger():
-                    print_status("Security threat detected - terminating", "error")
+                # Only check for active debugger attachment (most critical)
+                if hasattr(sys, 'gettrace') and sys.gettrace() is not None:
+                    print_status("Active debugger detected - terminating", "error")
                     sys.exit(1)
                 
-                # Anti-analysis checks (less frequent)
-                if self._detect_analysis_tools():
-                    print_status("Analysis tool detected - terminating", "error")
-                    sys.exit(1)
+                # Check for critical analysis tools (very selective)
+                try:
+                    critical_tools = ['cheatengine.exe', 'ida64.exe', 'x64dbg.exe']
+                    for proc in psutil.process_iter(['name']):
+                        proc_name = proc.info.get('name', '').lower()
+                        if proc_name in critical_tools:
+                            print_status(f"Critical analysis tool detected: {proc_name}", "error")
+                            sys.exit(1)
+                except:
+                    pass  # Ignore process detection errors
                 
-                # Runtime integrity (more lenient)
-                if not self._verify_runtime_integrity():
-                    print_status("Runtime integrity compromised - terminating", "error")
-                    sys.exit(1)
+                # Much longer sleep - only check every 30 seconds
+                time.sleep(30)
                 
-                # Longer sleep for normal operation
-                time.sleep(10)
-            except:
-                # Don't crash on monitoring errors
-                time.sleep(10)
+            except Exception:
+                # If monitoring fails, just continue silently
+                time.sleep(30)
     
-    def _detect_debugger(self) -> bool:
-        """Detect active debuggers"""
+    def basic_security_check(self) -> bool:
+        """Basic security check - only critical threats"""
         try:
-            # Only check for active debugger attachment
+            # Only check for active debugger (most important)
             if hasattr(sys, 'gettrace') and sys.gettrace() is not None:
-                return True
-            
-            # More specific debugger detection (exact matches only)
-            dangerous_processes = ['gdb', 'windbg', 'x64dbg', 'ollydbg']
-            try:
-                for proc in psutil.process_iter(['name']):
-                    proc_name = proc.info.get('name', '').lower()
-                    if proc_name in dangerous_processes:
-                        return True
-            except (psutil.NoSuchProcess, psutil.AccessDenied):
-                pass
-        except:
-            pass
-        return False
-    
-    def _detect_analysis_tools(self) -> bool:
-        """Detect active reverse engineering tools"""
-        try:
-            # Only detect actively dangerous tools
-            dangerous_tools = ['cheatengine', 'ida64', 'ida']
-            try:
-                for proc in psutil.process_iter(['name']):
-                    proc_name = proc.info.get('name', '').lower()
-                    if proc_name in dangerous_tools:
-                        return True
-            except (psutil.NoSuchProcess, psutil.AccessDenied):
-                pass
-        except:
-            pass
-        return False
-    
-    def _verify_runtime_integrity(self) -> bool:
-        """Verify runtime integrity"""
-        try:
-            # Check execution time (prevent time-based analysis)
-            # Increased timeout for normal usage - 30 minutes max
-            if time.time() - self.start_time > 1800:
                 return False
-            
-            # Check for suspicious modules (only during active analysis)
-            prohibited = ['pdb', 'trace', 'bdb', 'dis']
-            active_prohibited = [mod for mod in prohibited if mod in sys.modules and hasattr(sys.modules[mod], '__file__')]
-            if active_prohibited:
-                return False
-                
             return True
         except:
-            return True  # Don't fail on exceptions during normal operation
+            return True
     
     def generate_loader_signature(self, device_id: str, user_name: str, timestamp: int) -> str:
         """Generate secure loader signature"""
@@ -353,6 +318,10 @@ def download_and_execute_checker(device_id, user_name, security_engine):
         print_status("Challenge solution failed", "error")
         sys.exit(1)
     
+    # Step 2.5: Start security monitoring AFTER successful challenge
+    print_status("Challenge solved - activating security monitoring", "security")
+    security_engine.start_monitoring()
+    
     # Step 3: Prepare secure headers
     timestamp = int(time.time())
     signature = security_engine.generate_loader_signature(device_id, user_name, timestamp)
@@ -447,7 +416,7 @@ def download_and_execute_checker(device_id, user_name, security_engine):
         print_status("Secure download failed - check your connection and credentials", "error")
         sys.exit(1)
     
-    # Step 6: Verify and execute
+     # Step 6: Verify and execute
     if not os.path.exists(local_checker_path):
         print_status("Downloaded file not found - security error", "error")
         sys.exit(1)
@@ -461,13 +430,19 @@ def download_and_execute_checker(device_id, user_name, security_engine):
                 sys.exit(1)
             
         print_status("Content integrity verified - executing secure checker", "success")
+        print_status("Security monitoring will continue during execution", "security")
         print_status("=" * 60, "info")
         
         # Execute with original arguments
         subprocess.run([sys.executable, local_checker_path] + sys.argv[1:])
         
+        # Stop monitoring after execution
+        security_engine.stop_monitoring()
+        print_status("Execution completed - security monitoring stopped", "info")
+        
     except Exception as e:
         print_status(f"Execution error: {e}", "error")
+        security_engine.stop_monitoring()
         sys.exit(1)
 
 def main():
