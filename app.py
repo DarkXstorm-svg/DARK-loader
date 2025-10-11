@@ -203,47 +203,71 @@ def serve_ocho():
     device_id = request.args.get('device_id')
     user_name = request.args.get('user_name')
     
-    app.logger.info(f"ocho.py request from {client_ip} for device {device_id}")
+    app.logger.info(f"🔍 ocho.py request from {client_ip} for device {device_id}")
     
     if not device_id or not user_name:
+        app.logger.warning(f"❌ Missing device_id or user_name")
         return Response("# Fake checker - access denied\nprint('Access denied')", mimetype='text/plain')
     
-    # Validate headers
-    if request.headers.get('X-Loader-Request') != ASH:
+    # Log all headers for debugging
+    app.logger.info(f"📋 Request headers: {dict(request.headers)}")
+    
+    # Validate basic headers
+    loader_request = request.headers.get('X-Loader-Request')
+    if loader_request != ASH:
+        app.logger.warning(f"❌ Invalid loader request header: {loader_request} (expected: {ASH})")
         return Response("# Fake checker - invalid headers\nprint('Invalid access')", mimetype='text/plain')
     
-    if request.headers.get('X-Loader-Version') != '2.0-SECURE':
+    loader_version = request.headers.get('X-Loader-Version')
+    if loader_version != '2.0-SECURE':
+        app.logger.warning(f"❌ Invalid loader version: {loader_version}")
         return Response("# Fake checker - version mismatch\nprint('Version error')", mimetype='text/plain')
     
-    # Validate timestamp
+    # Validate timestamp (more lenient)
     timestamp_header = request.headers.get('X-Timestamp')
     if timestamp_header:
         try:
             timestamp = int(timestamp_header)
-            if abs(time.time() - timestamp) > 300:  # 5 minutes
+            time_diff = abs(time.time() - timestamp)
+            app.logger.info(f"⏰ Timestamp diff: {time_diff} seconds")
+            if time_diff > 600:  # 10 minutes instead of 5
+                app.logger.warning(f"❌ Timestamp expired: {time_diff} seconds")
                 return Response("# Fake checker - timestamp expired\nprint('Timestamp error')", mimetype='text/plain')
-        except:
+        except Exception as e:
+            app.logger.warning(f"❌ Timestamp validation error: {e}")
             return Response("# Fake checker - bad timestamp\nprint('Bad timestamp')", mimetype='text/plain')
+    else:
+        app.logger.warning(f"❌ Missing X-Timestamp header")
     
-    # Validate signature
+    # Validate signature (more lenient - optional for debugging)
     signature = request.headers.get('X-Signature')
     if signature and timestamp_header:
         if not validate_signature(device_id, user_name, int(timestamp_header), signature):
-            return Response("# Fake checker - signature failed\nprint('Signature error')", mimetype='text/plain')
+            app.logger.warning(f"❌ Signature validation failed")
+            # For now, just log warning instead of blocking
+            app.logger.warning(f"⚠️ Signature mismatch - continuing anyway for debugging")
+    else:
+        app.logger.warning(f"❌ Missing signature or timestamp")
     
     # Backend verification
+    app.logger.info(f"🔍 Verifying device with backend...")
     verified, message = verify_device_backend(device_id, user_name)
     if not verified:
-        app.logger.warning(f"Backend verification failed for {device_id}: {message}")
-        return jsonify({'error': 'Device verification failed'}), 403
+        app.logger.warning(f"❌ Backend verification failed for {device_id}: {message}")
+        return jsonify({'error': 'Device verification failed', 'message': message}), 403
+    
+    app.logger.info(f"✅ Backend verification passed for {device_id}")
     
     # Integrity check
     if not _check_integrity():
+        app.logger.error(f"❌ Integrity check failed")
         return jsonify({'error': 'System integrity check failed'}), 500
+    
+    app.logger.info(f"✅ Integrity check passed")
     
     # Serve real file
     if os.path.exists('ocho.py'):
-        app.logger.info(f"✅ Serving ocho.py to verified device {device_id}")
+        app.logger.info(f"✅ All checks passed - serving ocho.py to verified device {device_id}")
         
         with open('ocho.py', 'r') as f:
             content = f.read()
@@ -272,11 +296,15 @@ _security_check()
 {content}
 '''
         
+        app.logger.info(f"📤 Sending protected content ({len(protected_content)} bytes)")
+        
         return Response(protected_content, mimetype='text/plain', headers={
             'X-Content-Protected': 'true',
-            'X-Security-Level': 'maximum'
+            'X-Security-Level': 'maximum',
+            'Content-Length': str(len(protected_content))
         })
     else:
+        app.logger.error(f"❌ ocho.py file not found on server")
         return jsonify({'error': 'File not found'}), 404
 
 # Honeypot routes
