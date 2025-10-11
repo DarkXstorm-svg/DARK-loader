@@ -1,6 +1,21 @@
+# Original dependencies
 Flask==3.0.3
 requests==2.32.3
 colorama==0.4.6
 cloudscraper==1.2.71
 pycryptodome==3.20.0
 urllib3==2.2.3
+
+# Security server dependencies
+PyJWT==2.8.0
+cryptography==41.0.7
+user-agents==2.2.0
+gunicorn==21.2.0
+python-dotenv==1.0.0
+
+# Additional security libraries
+psutil==5.9.6
+ipaddress==1.0.23
+
+# Development and monitoring
+Werkzeug==3.0.1
