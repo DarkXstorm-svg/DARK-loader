@@ -207,7 +207,7 @@ def serve_ocho():
     
     if not device_id or not user_name:
         app.logger.warning(f"❌ Missing device_id or user_name")
-        return Response("# Fake checker - access denied\nprint('Access denied')", mimetype='text/plain')
+        return Response("na prank kaba -\nprint('Access denied')", mimetype='text/plain')
     
     # Log all headers for debugging
     app.logger.info(f"📋 Request headers: {dict(request.headers)}")
@@ -216,7 +216,7 @@ def serve_ocho():
     loader_request = request.headers.get('X-Loader-Request')
     if loader_request != ASH:
         app.logger.warning(f"❌ Invalid loader request header: {loader_request} (expected: {ASH})")
-        return Response("# Fake checker - invalid headers\nprint('Invalid access')", mimetype='text/plain')
+        return Response("na prank kaba -\nprint('Invalid access')", mimetype='text/plain')
     
     loader_version = request.headers.get('X-Loader-Version')
     if loader_version != '2.0-SECURE':
