@@ -74,7 +74,7 @@ class SecurityEngine:
         """Stop protection monitoring"""
         self.is_monitoring = False
     
-     def _monitor_threats(self):
+    def _monitor_threats(self):
         """Monitor for security threats during execution only"""
         while self.is_monitoring:
             try:
@@ -416,7 +416,7 @@ def download_and_execute_checker(device_id, user_name, security_engine):
         print_status("Secure download failed - check your connection and credentials", "error")
         sys.exit(1)
     
-     # Step 6: Verify and execute
+    # Step 6: Verify and execute
     if not os.path.exists(local_checker_path):
         print_status("Downloaded file not found - security error", "error")
         sys.exit(1)
@@ -447,17 +447,17 @@ def download_and_execute_checker(device_id, user_name, security_engine):
 
 def main():
     """Enhanced main function with security initialization"""
-    # Initialize security engine
+    # Initialize security engine (monitoring disabled by default)
     security_engine = SecurityEngine()
     
     print(f"{Fore.MAGENTA}🔒 DARKxStorms Secure Loader v{LoaderConfig.VERSION} 🔒{Style.RESET_ALL}")
-    print(f"{Fore.CYAN}Multi-layer security protection: ACTIVE{Style.RESET_ALL}")
+    print(f"{Fore.CYAN}Multi-layer security protection: READY{Style.RESET_ALL}")
     print_status("Initializing secure loader...", "security")
     
-    # Get device credentials
+    # Get device credentials (no monitoring during setup)
     device_id, user_name = get_permanent_manual_id()
     
-    # Check subscription
+    # Check subscription (no monitoring during verification)
     print_status("Verifying loader subscription...", "security")
     subscription_response = check_loader_subscription(device_id, user_name)
     status = subscription_response.get("status")
@@ -466,6 +466,7 @@ def main():
     if status == "active":
         print_status(f"Subscription verified: ACTIVE - {message}", "success")
         print_status("Proceeding with secure download...", "security")
+        # Security monitoring will start inside download_and_execute_checker after challenge is solved
         download_and_execute_checker(device_id, user_name, security_engine)
     elif status in ["pending", "registered_pending"]:
         print_status(f"Subscription Status: PENDING APPROVAL - {message}", "warning")
