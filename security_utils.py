@@ -25,8 +25,8 @@ import sys
 class SecurityConfig:
     """Security configuration constants"""
     # Rotating secrets (change these regularly)
-    PRIMARY_SECRET = "DarkXStorm_2024_SecureKey_V2"
-    SECONDARY_SECRET = "OchoProtection_Elite_Guard_2024"
+    ASH = "KUPAL"
+    YAWA = "ULOL"
     TERTIARY_SECRET = "UltraSecure_AntiReverse_Shield"
     
     # Token validation times
@@ -52,8 +52,8 @@ class CryptoEngine:
     def _derive_master_key(self):
         """Derive master encryption key from multiple sources"""
         combined_secret = (
-            SecurityConfig.PRIMARY_SECRET + 
-            SecurityConfig.SECONDARY_SECRET + 
+            SecurityConfig.ASH + 
+            SecurityConfig.YAWA + 
             str(int(time.time() // 3600))  # Hour-based rotation
         ).encode()
         
@@ -93,13 +93,13 @@ class SignatureValidator:
         
         # Multi-layer signature
         sig1 = hmac.new(
-            SecurityConfig.PRIMARY_SECRET.encode(),
+            SecurityConfig.ASH.encode(),
             data.encode(),
             hashlib.sha256
         ).hexdigest()
         
         sig2 = hmac.new(
-            SecurityConfig.SECONDARY_SECRET.encode(),
+            SecurityConfig.YAWA.encode(),
             sig1.encode(),
             hashlib.sha512
         ).hexdigest()
@@ -151,7 +151,7 @@ class ChallengeResponseSystem:
         # Create challenge hash
         challenge_data = f"{nonce}:{challenge_text}:{timestamp}"
         challenge_hash = hashlib.sha256(
-            f"{challenge_data}:{SecurityConfig.PRIMARY_SECRET}".encode()
+            f"{challenge_data}:{SecurityConfig.ASH}".encode()
         ).hexdigest()
         
         challenge_obj = {
@@ -195,7 +195,7 @@ class ChallengeResponseSystem:
             
             # Validate client signature
             expected_sig = hmac.new(
-                f"{challenge['nonce']}:{SecurityConfig.PRIMARY_SECRET}".encode(),
+                f"{challenge['nonce']}:{SecurityConfig.ASH}".encode(),
                 f"{challenge_id}:{response}".encode(),
                 hashlib.sha256
             ).hexdigest()
