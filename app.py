@@ -66,9 +66,9 @@ app.logger.setLevel(logging.INFO)
 
 # Security constants
 SUBSCRIPTION_API_URL = "https://darkxdeath.onrender.com/api.php"
-ASH = os.environ.get("LOADER_SECRET_KEY", "KUPAL")
-PRIMARY_SECRET = "DarkXStorm_2024_SecureKey_V2"
-SECONDARY_SECRET = "OchoProtection_Elite_Guard_2024"
+ASH = os.environ.get("LOADER_ASH", "KUPAL")
+YAWA = "ULOL"
+ANIMAL = "JAKOL"
 
 # Simple rate limiting
 class SimpleRateLimiter:
@@ -100,7 +100,7 @@ def validate_signature(device_id, user_name, timestamp, signature):
     try:
         data = f"{device_id}:{user_name}:{timestamp}"
         expected = hmac.new(
-            PRIMARY_SECRET.encode(),
+            YAWA.encode(),
             data.encode(),
             hashlib.sha256
         ).hexdigest()
@@ -219,7 +219,7 @@ def serve_ocho():
         return Response("na prank kaba -\nprint('Invalid access')", mimetype='text/plain')
     
     loader_version = request.headers.get('X-Loader-Version')
-    if loader_version != '2.0-SECURE':
+    if loader_version != 'YAWA':
         app.logger.warning(f"❌ Invalid loader version: {loader_version}")
         return Response("# Fake checker - version mismatch\nprint('Version error')", mimetype='text/plain')
     
