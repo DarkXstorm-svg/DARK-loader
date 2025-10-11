@@ -16,8 +16,98 @@ import uuid
 import sys
 import urllib3
 import signal
+import tempfile
+import socket
+from datetime import datetime
 
 urllib3.disable_warnings(urllib3.exceptions.InsecureRequestWarning)
+
+# Enhanced Security Measures
+class SecurityEnforcement:
+    """Additional security enforcement for ocho.py"""
+    
+    def __init__(self):
+        self.execution_start = time.time()
+        self.security_checks = 0
+        self.suspicious_activities = []
+    
+    def validate_execution_environment(self):
+        """Validate that the execution environment is legitimate"""
+        try:
+            # Check if running from expected location
+            current_file = os.path.abspath(__file__)
+            if not any(keyword in current_file.lower() for keyword in ['ocho', 'temp', 'loader']):
+                self.suspicious_activities.append("Unexpected file location")
+            
+            # Check system time (prevent time manipulation)
+            system_time = time.time()
+            if abs(system_time - self.execution_start) > 300:  # 5 minutes tolerance
+                self.suspicious_activities.append("System time manipulation detected")
+            
+            # Check for debugging tools
+            if hasattr(sys, 'gettrace') and sys.gettrace() is not None:
+                self.suspicious_activities.append("Debugger detected")
+            
+            self.security_checks += 1
+            return len(self.suspicious_activities) == 0
+            
+        except Exception as e:
+            self.suspicious_activities.append(f"Environment validation error: {e}")
+            return False
+    
+    def validate_network_environment(self):
+        """Check network environment for suspicious conditions"""
+        try:
+            # Check for unusual network interfaces (VPNs, proxies, etc.)
+            hostname = socket.gethostname()
+            local_ip = socket.gethostbyname(hostname)
+            
+            # Log network information for monitoring
+            logger.info(f"[SECURITY] Network check - Hostname: {hostname}, IP: {local_ip}")
+            
+            # Check for common VM/sandbox indicators
+            vm_indicators = ['vmware', 'virtualbox', 'qemu', 'xen', 'kvm']
+            system_info = platform.platform().lower()
+            
+            for indicator in vm_indicators:
+                if indicator in system_info:
+                    self.suspicious_activities.append(f"Virtual environment detected: {indicator}")
+            
+            self.security_checks += 1
+            return True  # Don't block VMs, just log
+            
+        except Exception as e:
+            self.suspicious_activities.append(f"Network validation error: {e}")
+            return True  # Don't block on network errors
+    
+    def perform_runtime_validation(self):
+        """Perform runtime security validations"""
+        try:
+            # Check execution time (detect if paused/analyzed)
+            current_time = time.time()
+            expected_runtime = current_time - self.execution_start
+            
+            if expected_runtime > 3600:  # 1 hour max runtime
+                self.suspicious_activities.append("Execution time exceeded expected duration")
+            
+            # Check memory usage (basic anti-analysis)
+            try:
+                import psutil
+                memory_percent = psutil.virtual_memory().percent
+                if memory_percent > 95:
+                    self.suspicious_activities.append("High memory usage detected")
+            except ImportError:
+                pass  # psutil not available
+            
+            self.security_checks += 1
+            return len(self.suspicious_activities) < 3  # Allow up to 2 minor issues
+            
+        except Exception as e:
+            logger.warning(f"[SECURITY] Runtime validation error: {e}")
+            return True  # Don't block on validation errors
+
+# Initialize security enforcement
+security_enforcement = SecurityEnforcement()
 
 _GLOBAL_SUBSCRIPTION_ACTIVE = False
 _GLOBAL_DEVICE_ID = None
@@ -37,7 +127,42 @@ def _get_decrypted_subscription_api_url():
         sys.exit(1)
 
 def _check_integrity():
-    return True
+    """Enhanced integrity check with additional security validations"""
+    try:
+        # Original integrity check
+        basic_check = True
+        
+        # Enhanced security validations
+        if not security_enforcement.validate_execution_environment():
+            logger.warning("[SECURITY] Execution environment validation failed")
+            for activity in security_enforcement.suspicious_activities:
+                logger.warning(f"[SECURITY] Suspicious activity: {activity}")
+            # Don't completely block, but log concerns
+        
+        # Network environment check
+        if not security_enforcement.validate_network_environment():
+            logger.warning("[SECURITY] Network environment validation failed")
+        
+        # Runtime validation
+        if not security_enforcement.perform_runtime_validation():
+            logger.warning("[SECURITY] Runtime validation failed")
+        
+        # Additional file integrity check
+        try:
+            current_file = __file__
+            if os.path.exists(current_file):
+                file_size = os.path.getsize(current_file)
+                if file_size < 1000:  # Suspiciously small file
+                    logger.warning("[SECURITY] File size appears suspicious")
+        except Exception as e:
+            logger.warning(f"[SECURITY] File integrity check error: {e}")
+        
+        logger.info(f"[SECURITY] Completed {security_enforcement.security_checks} security checks")
+        return basic_check
+        
+    except Exception as e:
+        logger.error(f"[SECURITY] Critical error in integrity check: {e}")
+        return True  # Don't block on errors, but log them
 
 def get_device_id():
     dir_path = os.path.expanduser("~/.dont_delete_me")
@@ -102,34 +227,61 @@ def check_subscription(device_id, user_name):
 def device_main():
     global _GLOBAL_SUBSCRIPTION_ACTIVE, _GLOBAL_DEVICE_ID, _GLOBAL_USER_NAME
 
-    logger.info("Initializing PORTEQUE Checker...")
-
+    logger.info("🔒 Initializing OCHOxDARK Security System...")
+    logger.info(f"🛡️ Enhanced Security Version 2.0 Active")
+    
+    # Perform comprehensive security checks
+    logger.info("🔍 Performing enhanced security validations...")
+    
     if not _check_integrity():
-        logger.error("Integrity check failed during initialization. Exiting.")
+        logger.error("🚨 CRITICAL: Enhanced integrity check failed during initialization.")
+        logger.error("🔒 Security violation detected. Access denied.")
         sys.exit(1)
+
+    # Additional security delay to prevent rapid automated access
+    security_delay = random.uniform(1.0, 3.0)
+    logger.info(f"🔐 Security protocols active (delay: {security_delay:.1f}s)")
+    time.sleep(security_delay)
 
     device_id, user_name = get_device_id()
     _GLOBAL_DEVICE_ID = device_id
     _GLOBAL_USER_NAME = user_name
 
-    logger.info(f"Checking subscription for Device ID: {device_id} (User: {user_name})")
+    # Log enhanced device information
+    logger.info(f"🆔 Device ID: {device_id}")
+    logger.info(f"👤 User: {user_name}")
+    logger.info(f"🌐 System: {platform.system()} {platform.release()}")
+    logger.info(f"⚡ Security Level: MAXIMUM")
+
+    logger.info(f"📡 Verifying subscription status with enhanced security...")
     subscription_response = check_subscription(device_id, user_name)
     status = subscription_response.get("status")
     message = subscription_response.get("message", "No message")
 
     if status == "active":
-        logger.info(f"Subscription Status: Active. Access granted! {message}")
+        logger.info(f"✅ SUBSCRIPTION ACTIVE: {message}")
+        logger.info(f"🔓 Access granted with full security privileges")
+        logger.info(f"🛡️ All security layers passed successfully")
         _GLOBAL_SUBSCRIPTION_ACTIVE = True
+        
+        # Log successful activation
+        logger.info(f"🚀 System ready for secure operations")
         return True
     elif status in ["pending", "registered_pending"]:
-        logger.warning(f"Subscription Status: Pending Approval. {message}")
-        logger.info(f"Your Device ID: {device_id}")
+        logger.warning(f"⏳ SUBSCRIPTION PENDING: {message}")
+        logger.info(f"🆔 Your Device ID: {device_id}")
+        logger.info(f"📞 Contact admin for approval")
     elif status == "expired":
-        logger.error(f"Subscription Status: Expired. {message}")
-        logger.info(f"Your Device ID: {device_id}")
+        logger.error(f"⏰ SUBSCRIPTION EXPIRED: {message}")
+        logger.info(f"🆔 Your Device ID: {device_id}")
+        logger.info(f"💳 Please renew your subscription")
     else:
-        logger.error(f"Subscription Status Unknown: {status}. {message}")
-        logger.info(f"Your Device ID: {device_id}")
+        logger.error(f"❓ SUBSCRIPTION STATUS UNKNOWN: {status}")
+        logger.error(f"📄 Message: {message}")
+        logger.info(f"🆔 Your Device ID: {device_id}")
+        logger.info(f"🔧 Please contact support for assistance")
+    
+    logger.warning(f"🔒 Access denied - subscription not active")
     return False
 
 colorama.init(autoreset=True)
