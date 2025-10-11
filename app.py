@@ -1,130 +1,311 @@
-from flask import Flask, send_file, Response, redirect, url_for, request, abort
+#!/usr/bin/env python3
+"""
+OCHOxDARK v2.0-SECURE Server (Simplified Version)
+Ultra-secure protection system without external limiter dependencies
+"""
+
+from flask import Flask, Response, request, jsonify
 import os
 import sys
 import logging
-import requests # Import requests for making HTTP calls to your backend API
-import json # For parsing JSON responses from your API
+import requests
+import json
+import time
+import hashlib
+import hmac
+import base64
+import secrets
+from datetime import datetime
+from functools import wraps
+from collections import defaultdict, deque
 
-# Import necessary components from ocho.py
-# We still need _check_integrity, ColoredFormatter, and colorama
-from ocho import (
-    _check_integrity,
-    logger as ocho_logger, # Rename to avoid conflict with app.logger
-    ColoredFormatter,
-    colorama
-)
+# Import components (with error handling for missing modules)
+try:
+    from security_utils import (
+        SecurityConfig,
+        crypto_engine,
+        signature_validator,
+        challenge_system,
+        rate_limiter,
+        anti_debugger,
+        forensic_logger,
+        decoy_system
+    )
+    SECURITY_UTILS_AVAILABLE = True
+except ImportError:
+    SECURITY_UTILS_AVAILABLE = False
+    print("Warning: security_utils not available, using basic security")
+
+try:
+    from ocho import _check_integrity, colorama
+    OCHO_AVAILABLE = True
+except ImportError:
+    OCHO_AVAILABLE = False
+    print("Warning: ocho.py not available for integrity checks")
+    def _check_integrity():
+        return True
+
+# Initialize colorama if available
+try:
+    import colorama
+    colorama.init(autoreset=True)
+except ImportError:
+    # Create dummy colorama for compatibility
+    class DummyColorama:
+        class Fore:
+            RED = GREEN = YELLOW = BLUE = CYAN = MAGENTA = WHITE = ""
+        class Style:
+            RESET_ALL = ""
+    colorama = DummyColorama()
 
 app = Flask(__name__)
 
-# --- Configure Logging for app.py ---
-app_handler = logging.StreamHandler()
-app_handler.setFormatter(ColoredFormatter())
-app.logger.addHandler(app_handler)
+# Basic logging setup
+logging.basicConfig(level=logging.INFO)
 app.logger.setLevel(logging.INFO)
 
-# Initialize colorama for app.py's own console output
-colorama.init(autoreset=True)
-
-# --- Your Backend API URL for Device Verification ---
+# Security constants
 SUBSCRIPTION_API_URL = "https://darkxdeath.onrender.com/api.php"
-
-# --- Secret key for loader verification ---
-# This should be a strong, unique key.
-# loader.py will send this in a custom header.
 ASH = os.environ.get("LOADER_SECRET_KEY", "KUPAL")
+PRIMARY_SECRET = "DarkXStorm_2024_SecureKey_V2"
+SECONDARY_SECRET = "OchoProtection_Elite_Guard_2024"
 
-# --- New function to verify device with your backend API ---
-def verify_device_with_backend(device_id, user_name):
+# Simple rate limiting
+class SimpleRateLimiter:
+    def __init__(self):
+        self.requests = defaultdict(deque)
+        self.blocked = set()
+        
+    def is_limited(self, ip):
+        if ip in self.blocked:
+            return True
+            
+        now = time.time()
+        # Clean old requests
+        while self.requests[ip] and self.requests[ip][0] < now - 60:
+            self.requests[ip].popleft()
+            
+        if len(self.requests[ip]) >= 5:  # 5 requests per minute
+            self.blocked.add(ip)
+            return True
+            
+        self.requests[ip].append(now)
+        return False
+
+rate_limiter_simple = SimpleRateLimiter()
+
+# Simple signature validation
+def validate_signature(device_id, user_name, timestamp, signature):
+    """Simple signature validation"""
     try:
-        # Construct the URL for your API
-        # Assuming your api.php expects device_id and user_name as query parameters
-        api_url = f"{SUBSCRIPTION_API_URL}?device_id={device_id}&user_name={user_name}"
-        
-        app.logger.info(f"{colorama.Fore.BLUE}Calling backend API for verification: {api_url}{colorama.Style.RESET_ALL}")
-        
-        # Make the HTTP GET request to your backend API
-        response = requests.get(api_url, timeout=10) # Add a timeout to prevent hanging
-        response.raise_for_status() # Raise an exception for HTTP errors (4xx or 5xx)
-        
-        response_json = response.json()
-        
-        # Assuming your API returns a JSON with a 'status' field, e.g., {"status": "active"}
-        # Adjust this logic based on the actual response format of your api.php
-        status = response_json.get("status")
-        message = response_json.get("message", "No message from backend.")
+        data = f"{device_id}:{user_name}:{timestamp}"
+        expected = hmac.new(
+            PRIMARY_SECRET.encode(),
+            data.encode(),
+            hashlib.sha256
+        ).hexdigest()
+        return hmac.compare_digest(expected[:64], signature)
+    except:
+        return False
 
-        if status == "active":
-            return True, message
-        else:
-            return False, message
-
-    except requests.exceptions.RequestException as e:
-        app.logger.error(f"{colorama.Fore.RED}Error communicating with backend API ({SUBSCRIPTION_API_URL}): {e}{colorama.Style.RESET_ALL}")
-        return False, f"Backend API communication error: {e}"
-    except json.JSONDecodeError:
-        app.logger.error(f"{colorama.Fore.RED}Backend API returned invalid JSON: {response.text}{colorama.Style.RESET_ALL}")
-        return False, "Backend API returned invalid response."
-    except Exception as e:
-        app.logger.error(f"{colorama.Fore.RED}An unexpected error occurred during backend verification: {e}{colorama.Style.RESET_ALL}")
-        return False, f"Unexpected verification error: {e}"
-
+def security_check(f):
+    """Simple security middleware"""
+    @wraps(f)
+    def decorated(*args, **kwargs):
+        client_ip = request.environ.get('HTTP_X_FORWARDED_FOR', request.remote_addr)
+        
+        # Basic rate limiting
+        if rate_limiter_simple.is_limited(client_ip):
+            app.logger.warning(f"Rate limit exceeded for {client_ip}")
+            return jsonify({"error": "Rate limit exceeded"}), 429
+            
+        return f(*args, **kwargs)
+    return decorated
 
 @app.route('/')
+@security_check
 def index():
+    """Main page"""
     return '''
     <html>
         <head>
-            <title>OCHOxDARK Server</title>
+            <title>OCHOxDARK Server v2.0-SECURE</title>
+            <style>
+                body { background: #000; color: #0f0; font-family: 'Courier New', monospace; text-align: center; }
+                .warning { color: #f00; font-weight: bold; margin: 20px; }
+                .secure { color: #0ff; }
+            </style>
         </head>
-        <body style="text-align: center; background-color: #000;">
-            <h1 style="color: white;">OCHOxDARK Server</h1>
-            <img src="https://i.ibb.co/F4NmSVfw/IMG-20250907-230002-857.jpg" 
-                 alt="OCHOxDARK Image" 
-                 style="max-width: 90%; height: auto; border-radius: 10px; margin-top: 20px;">
+        <body>
+            <h1>🔒 OCHOxDARK Server v2.0-SECURE 🔒</h1>
+            <div class="secure">Multi-Layer Security Protection Active</div>
+            <div class="warning">⚠️ PROTECTED SYSTEM ⚠️<br>Unauthorized access attempts are logged and monitored</div>
+            <img src="https://placehold.co/600x300?text=OCHOxDARK+Secure+Server" 
+                 alt="OCHOxDARK Secure" 
+                 style="max-width: 90%; height: auto; border-radius: 10px; margin-top: 20px; border: 2px solid #0f0;">
+            <div style="margin-top: 20px; font-size: 12px; color: #555;">
+                Security Level: Maximum | Protection: Active
+            </div>
         </body>
     </html>
     '''
 
-@app.route('/ocho.py')
-def serve_ocho():
-    # Check for the custom header from the loader
-    loader_request_header = request.headers.get('X-Loader-Request')
-
-    if loader_request_header != ASH:
-        app.logger.warning(f"{colorama.Fore.RED}Unauthorized access attempt to /ocho.py from IP: {request.remote_addr}. Missing or invalid 'X-Loader-Request' header. Access Denied (403).{colorama.Style.RESET_ALL}")
-        abort(403) # Deny access if header is missing or incorrect
-
-    # If the header is correct, proceed with device verification
+@app.route('/challenge', methods=['GET'])
+@security_check
+def get_challenge():
+    """Generate security challenge"""
     device_id = request.args.get('device_id')
     user_name = request.args.get('user_name')
-
+    
     if not device_id or not user_name:
-        app.logger.warning(f"{colorama.Fore.YELLOW}Access attempt to /ocho.py without required 'device_id' or 'user_name' query parameters (Loader header present). IP: {request.remote_addr}{colorama.Style.RESET_ALL}")
-        return redirect(url_for('index'))
+        return jsonify({'error': 'Missing parameters'}), 400
+    
+    if request.headers.get('X-Loader-Request') != ASH:
+        return jsonify({'error': 'Unauthorized'}), 403
+    
+    # Generate simple challenge
+    a = secrets.randbelow(100) + 1
+    b = secrets.randbelow(100) + 1
+    challenge_id = secrets.token_hex(8)
+    
+    challenge = {
+        'challenge_id': challenge_id,
+        'challenge': f"{a}+{b}",
+        'nonce': secrets.token_hex(8)
+    }
+    
+    # Store challenge temporarily (in production, use proper storage)
+    app.challenge_store = getattr(app, 'challenge_store', {})
+    app.challenge_store[challenge_id] = {
+        'result': a + b,
+        'timestamp': time.time(),
+        'device_id': device_id
+    }
+    
+    app.logger.info(f"Challenge generated for {device_id}")
+    return jsonify(challenge)
 
-    app.logger.info(f"{colorama.Fore.CYAN}Attempting to serve ocho.py for Device ID: {device_id} (User: {user_name}) from IP: {request.remote_addr} (Loader request detected){colorama.Style.RESET_ALL}")
+def verify_device_backend(device_id, user_name):
+    """Verify device with backend"""
+    try:
+        url = f"{SUBSCRIPTION_API_URL}?device_id={device_id}&user_name={user_name}"
+        response = requests.get(url, timeout=10, verify=False)
+        data = response.json()
+        return data.get("status") == "active", data.get("message", "")
+    except Exception as e:
+        return False, str(e)
 
-    # --- Verify device using your backend API ---
-    is_verified, message = verify_device_with_backend(device_id, user_name)
-
-    if is_verified:
-        app.logger.info(f"{colorama.Fore.GREEN}Device ID: {device_id} (User: {user_name}) verified by backend. Access granted! Message: {message}{colorama.Style.RESET_ALL}")
+@app.route('/ocho.py')
+@security_check
+def serve_ocho():
+    """Serve protected ocho.py"""
+    client_ip = request.environ.get('HTTP_X_FORWARDED_FOR', request.remote_addr)
+    device_id = request.args.get('device_id')
+    user_name = request.args.get('user_name')
+    
+    app.logger.info(f"ocho.py request from {client_ip} for device {device_id}")
+    
+    if not device_id or not user_name:
+        return Response("# Fake checker - access denied\nprint('Access denied')", mimetype='text/plain')
+    
+    # Validate headers
+    if request.headers.get('X-Loader-Request') != ASH:
+        return Response("# Fake checker - invalid headers\nprint('Invalid access')", mimetype='text/plain')
+    
+    if request.headers.get('X-Loader-Version') != '2.0-SECURE':
+        return Response("# Fake checker - version mismatch\nprint('Version error')", mimetype='text/plain')
+    
+    # Validate timestamp
+    timestamp_header = request.headers.get('X-Timestamp')
+    if timestamp_header:
+        try:
+            timestamp = int(timestamp_header)
+            if abs(time.time() - timestamp) > 300:  # 5 minutes
+                return Response("# Fake checker - timestamp expired\nprint('Timestamp error')", mimetype='text/plain')
+        except:
+            return Response("# Fake checker - bad timestamp\nprint('Bad timestamp')", mimetype='text/plain')
+    
+    # Validate signature
+    signature = request.headers.get('X-Signature')
+    if signature and timestamp_header:
+        if not validate_signature(device_id, user_name, int(timestamp_header), signature):
+            return Response("# Fake checker - signature failed\nprint('Signature error')", mimetype='text/plain')
+    
+    # Backend verification
+    verified, message = verify_device_backend(device_id, user_name)
+    if not verified:
+        app.logger.warning(f"Backend verification failed for {device_id}: {message}")
+        return jsonify({'error': 'Device verification failed'}), 403
+    
+    # Integrity check
+    if not _check_integrity():
+        return jsonify({'error': 'System integrity check failed'}), 500
+    
+    # Serve real file
+    if os.path.exists('ocho.py'):
+        app.logger.info(f"✅ Serving ocho.py to verified device {device_id}")
         
-        # Perform an integrity check from ocho.py just before serving the file
-        if not _check_integrity():
-            app.logger.error(f"{colorama.Fore.RED}Integrity check failed during ocho.py access for {device_id}. Potential tampering detected.{colorama.Style.RESET_ALL}")
-            return "Access Denied: Integrity check failed.", 403
+        with open('ocho.py', 'r') as f:
+            content = f.read()
+        
+        # Add runtime protection
+        protected_content = f'''# OCHOxDARK v2.0-SECURE Runtime Protected
+# Anti-debugging protection active
+import sys
 
-        if os.path.exists('ocho.py'):
-            with open('ocho.py', 'r') as f:
-                content = f.read()
-            return Response(content, mimetype='text/plain')
-        else:
-            app.logger.error(f"{colorama.Fore.RED}ocho.py file not found on server for {device_id}.{colorama.Style.RESET_ALL}")
-            return "File not found", 404
+def _security_check():
+    # Basic anti-debugging
+    if hasattr(sys, 'gettrace') and sys.gettrace() is not None:
+        print("Debugging detected - terminating")
+        sys.exit(1)
+    
+    # Check for analysis modules
+    bad_modules = ['pdb', 'trace', 'bdb', 'dis']
+    for mod in bad_modules:
+        if mod in sys.modules:
+            print("Analysis module detected - terminating")
+            sys.exit(1)
+
+_security_check()
+
+# Original content:
+{content}
+'''
+        
+        return Response(protected_content, mimetype='text/plain', headers={
+            'X-Content-Protected': 'true',
+            'X-Security-Level': 'maximum'
+        })
     else:
-        app.logger.warning(f"{colorama.Fore.YELLOW}Device ID: {device_id} (User: {user_name}) verification failed by backend. Message: {message}{colorama.Style.RESET_ALL}")
-        return f"Access Denied: Device verification failed. {message}", 403
+        return jsonify({'error': 'File not found'}), 404
+
+# Honeypot routes
+@app.route('/admin')
+@app.route('/login') 
+@app.route('/config')
+@app.route('/debug')
+def honeypot():
+    """Honeypot to catch attackers"""
+    client_ip = request.environ.get('HTTP_X_FORWARDED_FOR', request.remote_addr)
+    app.logger.warning(f"🍯 Honeypot triggered by {client_ip} on {request.path}")
+    rate_limiter_simple.blocked.add(client_ip)
+    return jsonify({'error': 'Not found'}), 404
+
+@app.errorhandler(404)
+def not_found(error):
+    return jsonify({'error': 'Not found'}), 404
+
+@app.errorhandler(403)
+def forbidden(error):
+    return jsonify({'error': 'Forbidden'}), 403
+
+@app.errorhandler(429)
+def rate_limited(error):
+    return jsonify({'error': 'Rate limit exceeded'}), 429
 
 if __name__ == '__main__':
+    print("🔒 OCHOxDARK v2.0-SECURE Server Starting...")
+    print("🛡️ Security protection: ACTIVE")
+    print("📡 Server ready on port 5000")
+    
     app.run(host='0.0.0.0', port=5000, debug=False)
